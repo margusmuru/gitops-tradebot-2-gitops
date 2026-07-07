@@ -37,3 +37,14 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
+      # ESO defaults these remoteRef subfields on every ExternalSecret; git omits them, so
+      # without this every ExternalSecret shows a permanent cosmetic OutOfSync. Ignore just
+      # the defaulted fields (key/property/secretKey still diff normally).
+      ignoreDifferences:
+        - group: external-secrets.io
+          kind: ExternalSecret
+          jqPathExpressions:
+            - '.spec.data[].remoteRef.conversionStrategy'
+            - '.spec.data[].remoteRef.decodingStrategy'
+            - '.spec.data[].remoteRef.metadataPolicy'
+            - '.spec.data[].remoteRef.nullBytePolicy'

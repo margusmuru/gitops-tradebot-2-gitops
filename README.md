@@ -9,9 +9,12 @@ Application per service directory, with environment-partitioned paths and a
 an OCI registry — each service directory is a Kustomize directory (`kustomization.yaml`
 + `values.yaml`) that pulls an in-repo chart via Kustomize's `helmCharts` field.
 
-> Status: bootstrapping. The pipeline mechanics, shared charts, in-cluster platform
-> (Kafka + Redis), and the `data-service` reference are in place. The remaining services
-> are not yet added — see `CLAUDE.md` for the current state and the fan-out plan.
+> Status: **base platform live.** The pipeline, shared charts, and the in-cluster platform —
+> Kafka (Strimzi), Redis, and the ESO/Vault secret store — are deployed and green on the
+> cluster. The application layer is next: `data-service` is scaffolded but held out
+> (`exclude: true` in the workload appset) until its image tag + external DB host are real;
+> the other backends and the UI aren't added yet. See `CLAUDE.md` for current state, the
+> fan-out plan, and the deployment lessons learned.
 
 ## Design decisions
 
@@ -29,8 +32,9 @@ an OCI registry — each service directory is a Kustomize directory (`kustomizat
   truth. (The chart also carries a `spring-config` mode, unused here.)
 - **External database.** No in-cluster database; apps connect out to a separate machine
   (Postgres / TimescaleDB), reached via a stable in-cluster `ExternalName`.
-- **In-cluster Kafka + Redis.** Kafka runs via the Strimzi operator (KRaft, SCRAM-SHA-512);
-  a single shared Redis runs as a StatefulSet. Both live under `base/tradebot-test/`.
+- **In-cluster Kafka + Redis.** Kafka runs via the Strimzi operator (1.1.0; KRaft,
+  SCRAM-SHA-512, CRDs at `kafka.strimzi.io/v1`, Kafka 4.2.0); a single shared Redis runs as
+  a StatefulSet. Both live under `base/tradebot-test/`.
 - **DB migrations as a PreSync hook.** Liquibase runs as an ArgoCD PreSync-hook Job
   (rendered by `common-service`) before each service's Deployment rolls.
 
@@ -49,13 +53,15 @@ an OCI registry — each service directory is a Kustomize directory (`kustomizat
 │   └── mfe/                        # reusable static-MFE chart (nginx) for the Angular UI
 ├── base/
 │   └── tradebot-test/              # platform instances (operators are build-provided)
+│       ├── eso/                    # tradebot-vault ClusterSecretStore + SA (ESO -> Vault)
 │       ├── kafka/                  # Strimzi Kafka (KRaft) + KafkaUsers
 │       └── redis/                  # shared Redis StatefulSet
 ├── environments/
 │   └── tradebot-test/              # the single environment today
 │       ├── whoami/                 # minimal zero-dependency smoke test (start here)
-│       └── data-service/           # first real backend (the reference service)
-└── infrastructure/                 # docs (not read by ArgoCD)
+│       └── data-service/           # reference backend (held out via `exclude` until image+DB real)
+├── vault/                          # Vault policy + setup commands (manual, root token; not ArgoCD)
+└── infrastructure/                 # out-of-band bootstrap: ArgoCD git credential (not read by ArgoCD)
 ```
 
 ## How it works
@@ -72,9 +78,10 @@ an OCI registry — each service directory is a Kustomize directory (`kustomizat
 
 ## Prerequisites
 
-- An ArgoCD with the ApplicationSet controller enabled and read access to this repo
-  (`https://gitlab.margusm.dev/gitops/tradebot-2-gitops.git`). Adjust `namespace: argocd`
-  in the three `argocd/` files if ArgoCD lives elsewhere.
+- An ArgoCD with the ApplicationSet controller enabled and **read access to this private
+  repo** — a `repository` credential (GitLab project deploy token, `read_repository` scope),
+  applied out-of-band before bootstrap; see `infrastructure/README.md`. Adjust
+  `namespace: argocd` in the three `argocd/` files if ArgoCD lives elsewhere.
 - **`argocd-cm` must enable the Kustomize+Helm hybrid** (one-time):
 
   ```bash
@@ -83,10 +90,14 @@ an OCI registry — each service directory is a Kustomize directory (`kustomizat
   kubectl -n argocd rollout restart deploy argocd-repo-server
   ```
 
-- **External Secrets Operator + a Vault-backed `ClusterSecretStore` named `vault-kv`**
-  (Vault KV v2, mount `secret`). Seed the paths each service references (see Secrets).
-- **The Strimzi Cluster Operator** (provides the Kafka CRDs). Not part of the base
-  cluster build — install it once. See `base/tradebot-test/README.md`.
+- **External Secrets Operator + Vault**, wired once (KV v2 at `secret`, Kubernetes auth, the
+  `vault-tokenreview` ClusterRoleBinding). tradebot then uses its own **scoped** store
+  `tradebot-vault` (`base/tradebot-test/eso/`), which needs a Vault policy + role and the
+  seeded secret paths — see `vault/README.md` and Secrets below.
+- **The Strimzi Cluster Operator 1.x** (provides the `kafka.strimzi.io/v1` CRDs). Not part of
+  the base cluster build — install it once (homelab `906-strimzi-kafka-operator.yml`). The
+  Kafka `version` in `base/tradebot-test/kafka/` must be one the installed operator supports
+  (1.1.0 → Kafka 4.1.x/4.2.0). See `base/tradebot-test/README.md`.
 - **An external Postgres/TimescaleDB** reachable from the cluster, and (for the OTLP path)
   an external OTLP endpoint (OTel Collector / Grafana Alloy).
 - Observability is otherwise satisfied by the cluster build: an in-cluster
@@ -94,6 +105,15 @@ an OCI registry — each service directory is a Kustomize directory (`kustomizat
   label).
 
 ## Bootstrapping
+
+**Out-of-band first** (once, not GitOps — these can't be repo-managed because they gate
+ArgoCD's access to the repo and to secrets):
+
+0. Wire the ArgoCD git credential (`infrastructure/README.md`) and the tradebot Vault
+   policy/role + seeded secrets (`vault/README.md`); ensure the Strimzi operator and the
+   `argocd-cm` buildOptions are in place (see Prerequisites).
+
+Then:
 
 1. Confirm `repoURL` in the three files under `argocd/` matches this repo.
 2. Push to `main`.
@@ -111,9 +131,9 @@ To prove the pipeline end-to-end with no external dependencies, start with the `
 service (`environments/tradebot-test/whoami/`): a tiny public image — no secrets, no DB,
 no Kafka, no ingress. It needs only ArgoCD.
 
-Each service is its own ArgoCD Application, so `whoami` goes green on its own even while
-`data-service` and the base components sit degraded for lack of their operators/secrets —
-that is expected.
+Each service is its own ArgoCD Application, so `whoami` goes green on its own regardless of
+the rest. (`data-service` is currently held out via `exclude: true`; the base platform is
+already up.)
 
 ```bash
 argocd app list                                    # tradebot-test-whoami -> Synced/Healthy
@@ -183,9 +203,11 @@ uses `/data-service/actuator/health/liveness`. Non-Actuator apps (like `whoami`,
 
 ## Secrets (ESO + Vault)
 
-`secrets.mode: eso` makes `common-service` render an `ExternalSecret` that projects a
-Secret named `<service>-secrets` from Vault; the container consumes it via `envFrom`. List
-the keys under `secrets.eso.data`. Vault path convention:
+`secrets.mode: eso` makes `common-service` render an `ExternalSecret` (with
+`secretStoreRef.name: tradebot-vault`) that projects a Secret named `<service>-secrets` from
+Vault; the container consumes it via `envFrom`. List the keys under `secrets.eso.data`. The
+`tradebot-vault` store (`base/tradebot-test/eso/`) is read-scoped to `secret/tradebot-test/*`.
+Vault path convention:
 
 - `secret/tradebot-test/<service>` — the service's DB credentials (and, for DB-backed
   services, the `db-migrator` superuser credential used by the migration Job).
@@ -264,3 +286,11 @@ The ArgoCD repo-server bundles a compatible helm, so this only affects local val
   using it on the next sync — review the ArgoCD diff before merging chart changes.
 - **Placeholders.** Replace the registry host, the external DB host, the OTLP endpoint,
   and image tags before real use (all marked in `data-service/values.yaml`).
+- **Sync ≠ Health in ArgoCD.** A failed apply surfaces as `OutOfSync` + a `SyncError`, and
+  CRs without a health check report `Healthy` by default — so an app can look green while a
+  resource silently failed to apply. Judge by Sync status + the last sync result, not the
+  health dot.
+- **Don't rename/replace the sole KRaft controller on a live cluster.** Renaming the Kafka
+  cluster or its NodePool triggers a node replacement; on a single-node KRaft cluster that
+  breaks the controller quorum (recovery = wipe + rebuild). Leave Strimzi names alone
+  post-deploy, or run 3 controllers for HA.

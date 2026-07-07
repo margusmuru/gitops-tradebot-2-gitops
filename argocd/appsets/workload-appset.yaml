@@ -1,0 +1,51 @@
+# Discovers every service directory and renders it as a Kustomize source. Each
+# environments/<env>/<service>/ has a kustomization.yaml that pulls an in-repo Helm
+# chart via Kustomize's helmCharts field (chartHome -> ../../../charts). ArgoCD runs
+# `kustomize build --enable-helm` on it.
+#
+# Requires argocd-cm:
+#   kustomize.buildOptions: "--enable-helm --load-restrictor LoadRestrictionsNone"
+# (set once on the cluster - see README Prerequisites).
+#
+# REPLACE every `repoURL` below with the real repository URL.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: workload-applications
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://gitlab.margusm.dev/gitops/tradebot-2-gitops.git
+        revision: main
+        directories:
+          - path: environments/*/*
+          # Bring-up sequencing: platform (base/kafka, base/redis) + ESO/Vault must be
+          # healthy BEFORE any real backend syncs. data-service is excluded until its
+          # dependencies exist (and its image tags are real). Remove this exclude to
+          # enable it. `whoami` stays discoverable as the zero-dependency smoke test.
+          - path: environments/tradebot-test/data-service
+            exclude: true
+  template:
+    metadata:
+      # path.segments = [environments, <env>, <service>]
+      name: '{{index .path.segments 1}}-{{.path.basename}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://gitlab.margusm.dev/gitops/tradebot-2-gitops.git
+        targetRevision: main
+        path: '{{.path.path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        # One namespace per environment on the same cluster: <env>-app.
+        namespace: '{{index .path.segments 1}}-app'
+      syncPolicy:
+        automated:
+          prune: false
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

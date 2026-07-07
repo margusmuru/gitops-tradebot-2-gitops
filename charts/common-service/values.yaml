@@ -1,0 +1,169 @@
+# Default values for common-service. Environment values files (referenced by the
+# workload ApplicationSet) are deep-merged on top of these, so the full tree below
+# is always present at render time - individual services only override what differs.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+
+serviceAccount:
+  create: false
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+
+containerPort: 8080
+
+# Plain (non-secret) environment variables.
+env: {}
+
+# Extra envFrom sources (existing Secrets/ConfigMaps).
+envFrom: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  path: /
+  pathType: Prefix
+  annotations: {}
+  tls: []
+
+# Secret delivery mode: eso | spring-config | none.
+# This is the per-service toggle that keeps both secret models open.
+secrets:
+  mode: none
+  # ESO mode: renders an ExternalSecret that projects a Secret named
+  # <release>-secrets, which the container consumes via envFrom.
+  eso:
+    secretStoreRef:
+      name: tradebot-vault
+      kind: ClusterSecretStore
+    refreshInterval: 1h
+    data: []
+    #  - secretKey: SPRING_DATASOURCE_PASSWORD
+    #    remoteRef:
+    #      key: tradebot-test/data-service
+    #      property: db-password
+  # spring-config mode: app pulls secrets from Spring Cloud Config at boot.
+  springConfig:
+    uri: ""
+    # Existing Secret holding config-server credentials (provided out-of-band).
+    credentialsSecret: ""
+
+# External database on a separate machine (no in-cluster DB).
+externalDb:
+  enabled: false
+  # Render an ExternalName Service so apps target a stable in-cluster DNS name
+  # instead of hardcoding the DB host. Swap the host in one place.
+  stableDns:
+    enabled: false
+    serviceName: ""      # e.g. data-service-db
+    externalName: ""     # e.g. postgres.db.internal
+  # Non-secret connection env vars (the JDBC URL, etc.). Credentials come through
+  # the secrets block above.
+  env: {}
+  #  SPRING_DATASOURCE_URL: jdbc:postgresql://data-service-db:5432/tradebot
+
+# OpenTelemetry export to an EXTERNAL Grafana stack (Tempo, Loki, Pyroscope,
+# Prometheus) reached through an OTLP endpoint - typically an external OTel Collector
+# or Grafana Alloy that fans out to those backends. This is the PUSH path: the app
+# pushes telemetry out to the external stack. A separate, opt-in PULL path exists via
+# the `serviceMonitor` block below (the in-cluster kube-prometheus-stack scrapes
+# metrics). Traces -> Tempo, metrics -> Prometheus, logs -> Loki all travel over OTLP.
+# Continuous profiling (Pyroscope) is configured in the app/agent, not via these
+# OTEL_* vars.
+observability:
+  enabled: false
+  otlpEndpoint: ""          # e.g. http://otel-collector.observability.example:4317
+  otlpProtocol: grpc        # grpc | http/protobuf
+  traces: true
+  metrics: true
+  logs: true
+  # Extra OTel resource attributes appended to the defaults (service.namespace, ns).
+  resourceAttributes: {}
+
+# Metrics scraping by an in-cluster Prometheus Operator. This cluster build runs
+# kube-prometheus-stack (Grafana + Prometheus in the `monitoring` namespace), so a
+# ServiceMonitor works. OFF by default because the default telemetry path is OTLP push
+# to an EXTERNAL Grafana stack (see `observability` above) - enable this if you want the
+# in-cluster Prometheus to scrape `/actuator/prometheus` instead / as well.
+# NOTE: kube-prometheus-stack only selects ServiceMonitors carrying the label of its
+# Helm release (here `release: monitoring`) - set it under `labels`.
+serviceMonitor:
+  enabled: false
+  path: /actuator/prometheus
+  interval: 30s
+  labels: {}
+    # release: monitoring
+
+# Probes hit the container's named `http` port (tracks containerPort), so only the
+# path is configurable here - no second source of truth for the port.
+probes:
+  liveness:
+    path: /actuator/health/liveness
+  readiness:
+    path: /actuator/health/readiness
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Liquibase DB migration, run as an ArgoCD PreSync hook Job before the Deployment
+# rolls (see templates/migration-job.yaml). OFF by default - only DB-backed services
+# with a database/<svc>/ changelog turn it on.
+#
+# The migrator image is a SEPARATE repository (db-migrator-<svc>) with its OWN pinned
+# tag: CI builds it only on database/<svc>/** changes, so migration.tag advances
+# independently of image.tag (which bumps on every build). Never use a floating tag.
+#
+# Credentials: migration runs as the DB superuser (postgres), a more privileged user
+# than the app's runtime DB user, so it gets its own ExternalSecret projecting
+# LIQUIBASE_DB_USERNAME + LIQUIBASE_DB_PASSWORD (eso mode only).
+migration:
+  enabled: false
+  repository: ""            # e.g. <registry>/.../db-migrator-data-service
+  tag: ""                   # pinned SHA, bumped only on database/<svc>/** changes
+  dbUrl: ""                 # jdbc URL (non-secret); usually the stable-DNS DB service
+  changelogFile: changelog-master.xml
+  command: update
+  backoffLimit: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  # eso mode: keys projected into <svc>-migration-secrets from Vault. Must yield
+  # LIQUIBASE_DB_USERNAME and LIQUIBASE_DB_PASSWORD.
+  eso:
+    data: []
+    #  - secretKey: LIQUIBASE_DB_USERNAME
+    #    remoteRef: { key: tradebot-test/data-service, property: db-migrator-username }
+    #  - secretKey: LIQUIBASE_DB_PASSWORD
+    #    remoteRef: { key: tradebot-test/data-service, property: db-migrator-password }

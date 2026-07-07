@@ -1,0 +1,8 @@
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Note: chart contents (including any vendored subcharts) are intentionally
+# committed - this repo is meant to be self-contained (no OCI pulls).

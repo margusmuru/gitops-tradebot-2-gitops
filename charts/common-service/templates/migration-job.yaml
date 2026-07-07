@@ -1,0 +1,87 @@
+{{- if .Values.migration.enabled }}
+{{- /*
+  DB migration as an ArgoCD PreSync hook. Runs the db-migrator-<svc> image (Liquibase
+  `update`) before the Deployment rolls. Templated in the chart (not a loose manifest)
+  so it shares the chart's values - but it carries its OWN pinned tag (migration.tag),
+  because the migrator image is built only on database/<svc>/** changes while the app
+  image builds on every service change. Liquibase update is idempotent, so re-running
+  the pinned migrator on app-only syncs is a no-op.
+
+  Migrations run as the DB superuser (the CI uses LIQUIBASE_DB_USERNAME=postgres), which
+  is a MORE privileged credential than the app's runtime DB user - hence a dedicated
+  ExternalSecret rather than reusing the app's <svc>-secrets.
+
+  Ordering: the migration ExternalSecret (wave -2) must materialise before the Job
+  (wave -1). Both are PreSync hooks because normal resources (incl. the app's own
+  ExternalSecret) are only applied in the main sync, AFTER PreSync hooks run. ArgoCD
+  gates each wave on resource health, incl. the ExternalSecret's SecretSynced status.
+*/}}
+{{- if eq .Values.secrets.mode "eso" }}
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ include "common-service.fullname" . }}-migration-secrets
+  labels:
+    {{- include "common-service.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  refreshInterval: {{ .Values.secrets.eso.refreshInterval }}
+  secretStoreRef:
+    name: {{ .Values.secrets.eso.secretStoreRef.name }}
+    kind: {{ .Values.secrets.eso.secretStoreRef.kind }}
+  target:
+    name: {{ include "common-service.fullname" . }}-migration-secrets
+    creationPolicy: Owner
+  data:
+    {{- toYaml (required "migration.eso.data is required in eso mode" .Values.migration.eso.data) | nindent 4 }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "common-service.fullname" . }}-migrate
+  labels:
+    {{- include "common-service.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "common-service.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: "{{ required "migration.repository is required when migration.enabled" .Values.migration.repository }}:{{ required "migration.tag is required when migration.enabled" .Values.migration.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: LIQUIBASE_DB_URL
+              value: {{ required "migration.dbUrl is required when migration.enabled" .Values.migration.dbUrl | quote }}
+            {{- if eq .Values.secrets.mode "eso" }}
+            - name: LIQUIBASE_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "common-service.fullname" . }}-migration-secrets
+                  key: LIQUIBASE_DB_USERNAME
+            - name: LIQUIBASE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "common-service.fullname" . }}-migration-secrets
+                  key: LIQUIBASE_DB_PASSWORD
+            {{- end }}
+          args:
+            - "--url=$(LIQUIBASE_DB_URL)"
+            - "--username=$(LIQUIBASE_DB_USERNAME)"
+            - "--password=$(LIQUIBASE_DB_PASSWORD)"
+            - "--changelog-file={{ .Values.migration.changelogFile }}"
+            - "{{ .Values.migration.command }}"
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+{{- end }}

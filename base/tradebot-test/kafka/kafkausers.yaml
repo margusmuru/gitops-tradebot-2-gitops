@@ -1,0 +1,104 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: data-service
+  labels:
+    strimzi.io/cluster: tradebot
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: kafka-user-passwords
+          key: data-service
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: gateway-service
+  labels:
+    strimzi.io/cluster: tradebot
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: kafka-user-passwords
+          key: gateway-service
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: kraken-ingest
+  labels:
+    strimzi.io/cluster: tradebot
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: kafka-user-passwords
+          key: kraken-ingest
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: yahoo-ingest
+  labels:
+    strimzi.io/cluster: tradebot
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: kafka-user-passwords
+          key: yahoo-ingest
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: oms-service
+  labels:
+    strimzi.io/cluster: tradebot
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: kafka-user-passwords
+          key: oms-service
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: bot-engine
+  labels:
+    strimzi.io/cluster: tradebot
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: kafka-user-passwords
+          key: bot-engine
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: user-service
+  labels:
+    strimzi.io/cluster: tradebot
+spec:
+  authentication:
+    type: scram-sha-512
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: kafka-user-passwords
+          key: user-service

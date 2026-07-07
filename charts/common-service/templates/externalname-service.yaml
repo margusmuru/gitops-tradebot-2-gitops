@@ -1,0 +1,13 @@
+{{- if and .Values.externalDb.enabled .Values.externalDb.stableDns.enabled }}
+# Stable in-cluster DNS name for the external database. Apps point at
+# <serviceName>:<port>; the actual host is defined once here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.externalDb.stableDns.serviceName }}
+  labels:
+    {{- include "common-service.labels" . | nindent 4 }}
+spec:
+  type: ExternalName
+  externalName: {{ .Values.externalDb.stableDns.externalName | quote }}
+{{- end }}

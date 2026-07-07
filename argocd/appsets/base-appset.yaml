@@ -1,0 +1,39 @@
+# Discovers platform components for an environment (e.g. Kafka, Redis) from
+# base/<env>/<component>/. Each directory is applied as raw manifests / kustomize
+# (no Helm here). Matches nothing until you add a component directory - that is fine.
+#
+# REPLACE every `repoURL` below with the real repository URL.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: base-applications
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://gitlab.margusm.dev/gitops/tradebot-2-gitops.git
+        revision: main
+        directories:
+          - path: "base/*/*"
+  template:
+    metadata:
+      # path.segments = [base, <env>, <component>]
+      name: 'base-{{index .path.segments 1}}-{{.path.basename}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://gitlab.margusm.dev/gitops/tradebot-2-gitops.git
+        targetRevision: main
+        path: '{{.path.path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{index .path.segments 1}}-base'
+      syncPolicy:
+        automated:
+          prune: false
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

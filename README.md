@@ -1,0 +1,266 @@
+# tradebot-2-gitops
+
+GitOps repository for **tradebot-2** — a Spring Boot microservice platform (8 backend
+services + an Angular UI) deployed to a self-managed Kubernetes cluster via ArgoCD.
+
+Delivery mechanics: an ArgoCD **ApplicationSet + Git directory generator** creates one
+Application per service directory, with environment-partitioned paths and a
+**Kustomize+Helm hybrid** render. Helm charts live **in this repo** (`charts/`), not in
+an OCI registry — each service directory is a Kustomize directory (`kustomization.yaml`
++ `values.yaml`) that pulls an in-repo chart via Kustomize's `helmCharts` field.
+
+> Status: bootstrapping. The pipeline mechanics, shared charts, in-cluster platform
+> (Kafka + Redis), and the `data-service` reference are in place. The remaining services
+> are not yet added — see `CLAUDE.md` for the current state and the fan-out plan.
+
+## Design decisions
+
+- **In-repo charts, no OCI.** No registry, no pull auth. Charts render straight from the
+  working tree; each service reaches the shared `charts/` via `helmGlobals.chartHome`.
+- **Kustomize+Helm hybrid.** Each service's `kustomization.yaml` pulls a chart via
+  `helmCharts` + `chartHome`. Requires `kustomize.buildOptions:
+  "--enable-helm --load-restrictor LoadRestrictionsNone"` in `argocd-cm` (see
+  Prerequisites) — acceptable because we manage this ArgoCD ourselves.
+- **One environment now, multi-env-ready.** Paths are environment-partitioned
+  (`environments/tradebot-test/`); a second environment is a new directory, not a
+  refactor. Namespace per environment: each env deploys into `<env>-app`.
+- **Secrets via ESO + Vault.** Every service's DB / Redis / Kafka credentials are
+  projected from Vault by the External Secrets Operator. Vault is the single source of
+  truth. (The chart also carries a `spring-config` mode, unused here.)
+- **External database.** No in-cluster database; apps connect out to a separate machine
+  (Postgres / TimescaleDB), reached via a stable in-cluster `ExternalName`.
+- **In-cluster Kafka + Redis.** Kafka runs via the Strimzi operator (KRaft, SCRAM-SHA-512);
+  a single shared Redis runs as a StatefulSet. Both live under `base/tradebot-test/`.
+- **DB migrations as a PreSync hook.** Liquibase runs as an ArgoCD PreSync-hook Job
+  (rendered by `common-service`) before each service's Deployment rolls.
+
+## Layout
+
+```text
+.
+├── argocd/
+│   ├── bootstrap.yaml              # apply once by hand -> syncs argocd/appsets/
+│   └── appsets/
+│       ├── workload-appset.yaml    # discovers environments/*/*  -> one App per service
+│       └── base-appset.yaml        # discovers base/*/*          -> platform components
+├── charts/                         # in-repo Helm charts (no OCI)
+│   ├── common-service/             # reusable backend chart (Deployment, Service, Ingress,
+│   │                               #   HPA, ESO, external-DB wiring, PreSync migration Job)
+│   └── mfe/                        # reusable static-MFE chart (nginx) for the Angular UI
+├── base/
+│   └── tradebot-test/              # platform instances (operators are build-provided)
+│       ├── kafka/                  # Strimzi Kafka (KRaft) + KafkaUsers
+│       └── redis/                  # shared Redis StatefulSet
+├── environments/
+│   └── tradebot-test/              # the single environment today
+│       ├── whoami/                 # minimal zero-dependency smoke test (start here)
+│       └── data-service/           # first real backend (the reference service)
+└── infrastructure/                 # docs (not read by ArgoCD)
+```
+
+## How it works
+
+1. `argocd/bootstrap.yaml` is applied once. It creates a single ArgoCD Application that
+   syncs `argocd/appsets/`.
+2. `workload-appset.yaml` uses a Git **directory** generator over `environments/*/*`. For
+   each service directory it creates an Application named `<env>-<service>` (e.g.
+   `tradebot-test-data-service`), deployed into namespace `<env>-app` (`tradebot-test-app`).
+3. `base-appset.yaml` does the same over `base/*/*`, deploying platform components into
+   `<env>-base` (`tradebot-test-base`).
+4. Each Application's source is its directory. ArgoCD runs `kustomize build --enable-helm`,
+   which pulls the in-repo chart and renders it with the directory's `values.yaml`.
+
+## Prerequisites
+
+- An ArgoCD with the ApplicationSet controller enabled and read access to this repo
+  (`https://gitlab.margusm.dev/gitops/tradebot-2-gitops.git`). Adjust `namespace: argocd`
+  in the three `argocd/` files if ArgoCD lives elsewhere.
+- **`argocd-cm` must enable the Kustomize+Helm hybrid** (one-time):
+
+  ```bash
+  kubectl -n argocd patch cm argocd-cm --type merge \
+    -p '{"data":{"kustomize.buildOptions":"--enable-helm --load-restrictor LoadRestrictionsNone"}}'
+  kubectl -n argocd rollout restart deploy argocd-repo-server
+  ```
+
+- **External Secrets Operator + a Vault-backed `ClusterSecretStore` named `vault-kv`**
+  (Vault KV v2, mount `secret`). Seed the paths each service references (see Secrets).
+- **The Strimzi Cluster Operator** (provides the Kafka CRDs). Not part of the base
+  cluster build — install it once. See `base/tradebot-test/README.md`.
+- **An external Postgres/TimescaleDB** reachable from the cluster, and (for the OTLP path)
+  an external OTLP endpoint (OTel Collector / Grafana Alloy).
+- Observability is otherwise satisfied by the cluster build: an in-cluster
+  kube-prometheus-stack is present (so `serviceMonitor` works with a `release: monitoring`
+  label).
+
+## Bootstrapping
+
+1. Confirm `repoURL` in the three files under `argocd/` matches this repo.
+2. Push to `main`.
+3. Apply the root Application once:
+
+   ```bash
+   kubectl apply -f argocd/bootstrap.yaml
+   ```
+
+ArgoCD then discovers and syncs everything under `environments/` and `base/`.
+
+## Quickstart (minimal)
+
+To prove the pipeline end-to-end with no external dependencies, start with the `whoami`
+service (`environments/tradebot-test/whoami/`): a tiny public image — no secrets, no DB,
+no Kafka, no ingress. It needs only ArgoCD.
+
+Each service is its own ArgoCD Application, so `whoami` goes green on its own even while
+`data-service` and the base components sit degraded for lack of their operators/secrets —
+that is expected.
+
+```bash
+argocd app list                                    # tradebot-test-whoami -> Synced/Healthy
+kubectl -n tradebot-test-app port-forward svc/whoami 8080:80
+curl localhost:8080
+```
+
+## Adding a service
+
+Create a directory `environments/<env>/<service>/` with a `kustomization.yaml` (selects
+the chart) and a `values.yaml` (the Helm values). `data-service` is the reference:
+
+```yaml
+# kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+helmGlobals:
+  chartHome: ../../../charts
+helmCharts:
+  - name: common-service          # or "mfe" for the Angular UI
+    releaseName: <service>        # becomes the resource names
+    valuesFile: values.yaml
+```
+
+Backend `values.yaml` highlights (see `environments/tradebot-test/data-service/values.yaml`
+for the full worked example and `charts/common-service/values.yaml` for all knobs):
+
+```yaml
+image:
+  repository: <registry>/<service>
+  tag: <commit-sha>
+env:
+  SPRING_PROFILES_ACTIVE: prod,k8s        # k8s profile: see "Spring profiles" below
+  KAFKA_BOOTSTRAP_SERVER_URL: tradebot-kafka-bootstrap.tradebot-test-base:9092
+  KAFKA_USERNAME: <kafka-user>
+secrets:
+  mode: eso                               # DB/Redis/Kafka passwords from Vault
+externalDb:
+  enabled: true
+  stableDns: { enabled: true, serviceName: <service>-db, externalName: <db-host> }
+  env: { DB_..._URL: jdbc:postgresql://<service>-db:5432/tradebot }
+migration:                                # DB-backed services only
+  enabled: true
+  repository: <registry>/db-migrator-<service>
+  tag: <db-changelog-sha>
+```
+
+The ApplicationSet picks up the new directory on the next refresh.
+
+## Spring profiles (the `k8s` profile)
+
+Services run with `SPRING_PROFILES_ACTIVE=prod,k8s`. The existing `prod` profile
+(unchanged, still used by the docker-compose deployment) supplies all env-driven config;
+the **`k8s` profile layers on top and overrides only the Kafka SASL mechanism** to
+`SCRAM-SHA-512`, because the in-cluster Strimzi operator's native `KafkaUser` auth is
+SCRAM (not the `PLAIN` used elsewhere). The `k8s` profile files live in the API repo
+(`application-k8s.{properties,yml}` per service). Kafka username/password come from the
+`KAFKA_USERNAME` env and the Vault-projected `KAFKA_PASSWORD`.
+
+## Health probes
+
+`common-service` defaults liveness/readiness to Spring Boot Actuator's health-group
+endpoints. **Mind the context path**: a service with `server.servlet.context-path`
+serves Actuator under it, so override the probe path accordingly — e.g. `data-service`
+uses `/data-service/actuator/health/liveness`. Non-Actuator apps (like `whoami`, and the
+`mfe` chart) probe `/`.
+
+## Secrets (ESO + Vault)
+
+`secrets.mode: eso` makes `common-service` render an `ExternalSecret` that projects a
+Secret named `<service>-secrets` from Vault; the container consumes it via `envFrom`. List
+the keys under `secrets.eso.data`. Vault path convention:
+
+- `secret/tradebot-test/<service>` — the service's DB credentials (and, for DB-backed
+  services, the `db-migrator` superuser credential used by the migration Job).
+- `secret/tradebot-test/redis` — the shared Redis password.
+- `secret/tradebot-test/kafka/<user>` — each service's Kafka SCRAM password.
+
+## External database
+
+No in-cluster database. Under `externalDb`, `stableDns.enabled: true` renders an
+`ExternalName` Service so apps target a stable in-cluster name (`<service>-db`) instead of
+the raw DB host — change the host in one place. Credentials come through the ESO block.
+
+## Messaging (Kafka) and cache (Redis)
+
+Both run in-cluster under `base/tradebot-test/` (namespace `tradebot-test-base`):
+
+- **Kafka** via Strimzi (KRaft, SCRAM-SHA-512). Broker at
+  `tradebot-kafka-bootstrap.tradebot-test-base:9092`; one `KafkaUser` per service, passwords
+  sourced from Vault. Topics are created by the apps themselves (no `KafkaTopic` CRs).
+- **Redis** as a shared StatefulSet at `redis.tradebot-test-base:6379`, password from Vault.
+
+See `base/tradebot-test/README.md` for details and the Strimzi prerequisite.
+
+## Database migrations
+
+DB-backed services set `migration.enabled: true`. `common-service` then renders an ArgoCD
+**PreSync hook**: an `ExternalSecret` (wave −2) projecting the migrator credential, and a
+`Job` (wave −1) running the `db-migrator-<service>` image (`liquibase update`) before the
+Deployment rolls. The migrator carries its **own pinned tag** (`migration.tag`), separate
+from the app image, because CI builds it only on DB-changelog changes; Liquibase `update`
+is idempotent, so re-running it on app-only syncs is a no-op. Migrations run as the DB
+superuser (`postgres`), a more privileged credential than the app's runtime user.
+
+## Observability
+
+- **OTLP push (default).** Services push traces/metrics/logs to an external Grafana stack
+  via Micrometer's `MANAGEMENT_OTLP_*` properties, set through `env:` in each service's
+  values (point them at an external OTel Collector / Grafana Alloy).
+- **ServiceMonitor scrape (opt-in, default off).** Set `serviceMonitor.enabled: true`
+  (with label `release: monitoring`) to have the in-cluster kube-prometheus-stack scrape
+  `/actuator/prometheus`.
+
+## CI image bumps
+
+ArgoCD watches **this** repo, not the service repos or the registry. A service's running
+version is the `image.tag` in its `values.yaml` here. Deploying a new build is a two-repo
+dance: the service repo's CI builds and pushes an image, then edits this repo's tag,
+commits, and pushes to `main`; ArgoCD re-renders and rolls the Deployment.
+
+Two tags per DB-backed service, bumped on different triggers (mirroring the service repo's
+CI):
+
+```bash
+# every build of the service (app image, commit SHA):
+yq -i '.image.tag = "<sha>"' environments/tradebot-test/<service>/values.yaml
+# only when database/<service>/** changed (migrator image):
+yq -i '.migration.tag = "<sha>"' environments/tradebot-test/<service>/values.yaml
+```
+
+## Validate locally
+
+Render a full service directory the way ArgoCD does (Kustomize + Helm):
+
+```bash
+kubectl kustomize --enable-helm --load-restrictor LoadRestrictionsNone \
+  environments/tradebot-test/data-service
+```
+
+Note: Kustomize's helm integration expects a **helm 3** CLI; a helm 4 binary fails with
+`unknown shorthand flag: 'c'` — point it at helm 3 with `--helm-command /path/to/helm3`.
+The ArgoCD repo-server bundles a compatible helm, so this only affects local validation.
+
+## Caveats
+
+- **In-repo chart blast radius.** Editing `charts/common-service` re-renders every service
+  using it on the next sync — review the ArgoCD diff before merging chart changes.
+- **Placeholders.** Replace the registry host, the external DB host, the OTLP endpoint,
+  and image tags before real use (all marked in `data-service/values.yaml`).

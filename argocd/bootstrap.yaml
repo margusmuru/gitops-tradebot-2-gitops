@@ -1,0 +1,31 @@
+# Root Application. Apply ONCE, by hand, to the existing (externally-owned) ArgoCD:
+#
+#   kubectl apply -f argocd/bootstrap.yaml
+#
+# It syncs argocd/appsets/, which contains the ApplicationSets that then discover
+# and deploy everything else. This is the only manual step and the only object you
+# create directly; from here the GitOps loop takes over.
+#
+# REPLACE `repoURL` with the real repository URL (also in the two appset files).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bootstrap
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.margusm.dev/gitops/tradebot-2-gitops.git
+    targetRevision: main
+    path: argocd/appsets
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

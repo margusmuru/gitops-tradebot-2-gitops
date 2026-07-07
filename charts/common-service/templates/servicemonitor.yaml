@@ -1,0 +1,23 @@
+{{- if .Values.serviceMonitor.enabled }}
+# Metrics scraping by the in-cluster Prometheus Operator (this cluster build runs
+# kube-prometheus-stack in the `monitoring` namespace). OFF by default - the default
+# path is OTLP push to an external Grafana stack (see observability). Enable this to
+# have the in-cluster Prometheus scrape the app instead / as well.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "common-service.fullname" . }}
+  labels:
+    {{- include "common-service.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "common-service.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

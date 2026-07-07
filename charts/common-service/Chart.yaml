@@ -1,0 +1,10 @@
+apiVersion: v2
+name: common-service
+description: >-
+  Reusable chart for a tradebot backend microservice: Deployment, Service, optional
+  Ingress, HPA, optional ExternalSecret (ESO), external-database wiring, and an
+  optional Liquibase PreSync migration Job. One chart for all backends; per-service
+  variation lives in the environment values.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

@@ -12,7 +12,7 @@ the broker at `tradebot-kafka-bootstrap.tradebot-test-base:9092`.
 - **`externalsecret.yaml`** — `ExternalSecret` `kafka-user-passwords`. Projects each Kafka
   user's SCRAM password from Vault (`secret/tradebot-test/kafka/<user>`, key `password`)
   into one K8s Secret via the `tradebot-vault` store.
-- **`kafka.yaml`** — the `KafkaNodePool` (`dual-role`, 1 replica, controller+broker, 5Gi
+- **`kafka.yaml`** — the `KafkaNodePool` (`kafka`, 1 replica, controller+broker, 5Gi
   Longhorn PVC) and the `Kafka` CR (`tradebot`). One internal listener on `:9092`,
   `tls: false`, `scram-sha-512` auth; replication factors set to 1 (single broker). The
   `entityOperator` runs the topic + user operators (the latter reconciles the KafkaUsers).

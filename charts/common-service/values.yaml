@@ -12,6 +12,18 @@ image:
 
 imagePullSecrets: []
 
+# Private image-registry pull credentials. When enabled, ESO projects a
+# kubernetes.io/dockerconfigjson Secret (from Vault, via the same store as `secrets.eso`)
+# and auto-wires it into imagePullSecrets for both the Deployment and the migration Job.
+# dockerconfigjson keys auth by registry HOST, so one credential that can read every path
+# under that host (e.g. a group-scoped GitLab deploy token with read_registry) covers both
+# the backend and UI image paths. Vault holds only username + password at `vaultKey`.
+registry:
+  enabled: false
+  server: ""                 # registry host, e.g. registry.margusm.dev
+  vaultKey: ""               # Vault kv path, e.g. tradebot-test/registry (props: username, password)
+  secretName: ""             # optional; defaults to <release>-registry
+
 replicaCount: 1
 
 serviceAccount:

@@ -84,6 +84,18 @@ vault kv put secret/tradebot-test/data-service \
 (As more backends are onboarded, add `secret/tradebot-test/<service>` with `db-password`
 + `db-migrator-username`/`db-migrator-password` the same way.)
 
+```bash
+# Private image-registry pull credential. Both projects live in the GitLab group
+# `devprojects`, so use a GROUP deploy token (Group -> Settings -> Repository -> Deploy
+# tokens) with scope read_registry - it pulls from every project in the group, covering
+# both the backend (devprojects/tradebot-2) and the UI (devprojects/tradebot-2-ui).
+# username = deploy-token username, password = the token. Both backend and UI charts point
+# registry.vaultKey at this same path. ESO builds the dockerconfigjson (host registry.margusm.dev).
+vault kv put secret/tradebot-test/registry \
+  username='CHANGE_ME' \
+  password='CHANGE_ME'
+```
+
 ## Verify end to end
 
 ```bash

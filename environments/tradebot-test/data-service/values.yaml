@@ -1,15 +1,24 @@
 # data-service - reference backend for the tradebot-test environment.
 # Exercises every dependency: external Postgres/Timescale (stable DNS + ESO creds),
 # in-cluster Redis + Kafka (base components), ESO secrets, Liquibase PreSync migration,
-# and the prod,k8s Spring profile (k8s flips Kafka to SCRAM-SHA-512).
+# and the self-contained k8s Spring profile (mirrors prod, Kafka on SCRAM-SHA-512).
 # Values here are merged over charts/common-service/values.yaml.
 
 image:
-  # PLACEHOLDER registry host - confirm the real $CI_REGISTRY_IMAGE base for margusmuru/tradebot-2.
-  repository: registry.margusm.dev/margusmuru/tradebot-2/data-service
+  # GitLab OCI registry: registry.margusm.dev/<group>/<project>/<image> = $CI_REGISTRY_IMAGE.
+  repository: registry.margusm.dev/devprojects/tradebot-2/data-service
   tag: REPLACE_ME            # bumped by CI on every data-service build (commit short SHA)
 
 replicaCount: 1
+
+# Pull backend images from the private GitLab registry. Credential (a group-scoped
+# read_registry deploy token) lives in Vault at secret/tradebot-test/registry and is
+# projected to a dockerconfigjson secret by ESO. The same credential/host also serves the
+# UI image path (different project, same host).
+registry:
+  enabled: true
+  server: registry.margusm.dev
+  vaultKey: tradebot-test/registry
 
 containerPort: 8081
 service:
@@ -22,18 +31,21 @@ probes:
   readiness:
     path: /data-service/actuator/health/readiness
 
-# Non-secret env. Activates prod + k8s profiles; k8s layers over prod and overrides only
-# the Kafka SASL mechanism (-> SCRAM-SHA-512). In-cluster hosts point at base services.
+# Non-secret env. Activates the self-contained `k8s` profile (application-k8s.properties):
+# it mirrors prod's env-driven wiring and uses SCRAM-SHA-512 for Kafka. In-cluster hosts
+# point at base services. (The always-on base application.properties still applies underneath.)
 env:
-  SPRING_PROFILES_ACTIVE: prod,k8s
+  SPRING_PROFILES_ACTIVE: k8s
   DATA_SERVICE_REDIS_HOST: redis.tradebot-test-base
   DATA_SERVICE_REDIS_PORT: "6379"
   KAFKA_BOOTSTRAP_SERVER_URL: tradebot-kafka-bootstrap.tradebot-test-base:9092
   KAFKA_USERNAME: data-service
-  # OTLP push to the external Grafana stack (Micrometer props, not the OTEL_* agent vars).
-  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector.observability.example:4318/v1/metrics
-  MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector.observability.example:4317
-  MANAGEMENT_OTLP_LOGGING_ENDPOINT: http://otel-collector.observability.example:4317
+  # OTLP push to the in-cluster Collector (base/tradebot-test/otel-collector), which forwards
+  # to the external Grafana stack. Micrometer props (not the OTEL_* agent vars). Tracing +
+  # logging over gRPC (4317); metrics over HTTP (4318, /v1/metrics).
+  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector.tradebot-test-base:4318/v1/metrics
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector.tradebot-test-base:4317
+  MANAGEMENT_OTLP_LOGGING_ENDPOINT: http://otel-collector.tradebot-test-base:4317
 
 # External Postgres/Timescale on a separate machine, reached via a stable in-cluster name.
 externalDb:
@@ -66,8 +78,7 @@ secrets:
 # so its own ExternalSecret pulls the migrator credential (separate from the app user).
 migration:
   enabled: true
-  # PLACEHOLDER registry host.
-  repository: registry.margusm.dev/margusmuru/tradebot-2/db-migrator-data-service
+  repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-data-service
   tag: REPLACE_ME            # bumped by CI only on database/data-service/** changes
   dbUrl: jdbc:postgresql://data-service-db:5432/tradebot
   eso:

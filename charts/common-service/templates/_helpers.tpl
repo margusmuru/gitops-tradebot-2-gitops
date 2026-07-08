@@ -22,6 +22,23 @@ app.kubernetes.io/name: {{ include "common-service.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{- /* Name of the ESO-projected dockerconfigjson pull secret (defaults to <release>-registry). */ -}}
+{{- define "common-service.registrySecretName" -}}
+{{- .Values.registry.secretName | default (printf "%s-registry" (include "common-service.fullname" .)) -}}
+{{- end -}}
+
+{{- /* imagePullSecrets for the Deployment: explicit .Values.imagePullSecrets plus the
+       registry pull secret when registry.enabled. */ -}}
+{{- define "common-service.imagePullSecrets" -}}
+{{- $secrets := .Values.imagePullSecrets | default list -}}
+{{- if .Values.registry.enabled -}}
+{{- $secrets = append $secrets (dict "name" (include "common-service.registrySecretName" .)) -}}
+{{- end -}}
+{{- if $secrets -}}
+{{- toYaml $secrets -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "common-service.otelResourceAttributes" -}}
 {{- /* k8s.namespace.name resolves at runtime via the Downward API POD_NAMESPACE env
        (defined earlier in the container), not at render time - under the Kustomize+Helm

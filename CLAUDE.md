@@ -10,7 +10,7 @@ onto the `skeleton-01` GitOps baseline as a practice run for the real Nortal set
 - **This repo:** `/Users/margusmuru/Developer/gitlab/gitops/tradebot-2-gitops`
   (remote `https://gitlab.margusm.dev/gitops/tradebot-2-gitops.git`)
 - **API (backends):** `/Users/margusmuru/Developer/gitlab/tradebot-2-worktrees/tradebot-2`
-  (remote `.../margusmuru/tradebot-2.git`) — Gradle multi-module, Jib images, Liquibase
+  (remote `.../devprojects/tradebot-2.git`) — Gradle multi-module, Jib images, Liquibase
 - **UI (Angular):** `/Users/margusmuru/Developer/gitlab/tradebot-2-ui-worktrees/tradebot-2-ui`
   — nginx-served static build; image `frontend`
 - **Cluster (ansible):** `/Users/margusmuru/Developer/gitlab/homelab/kube-cluster/kubernetes-RKE2`
@@ -30,6 +30,16 @@ onto the `skeleton-01` GitOps baseline as a practice run for the real Nortal set
   `secret/tradebot-test/kafka/<user>` (per Kafka user). `audiences: [vault]` goes under
   `auth.kubernetes.serviceAccountRef` (ESO 2.6.0 schema), matched by the Vault role `audience=vault`.
 - **DB:** external Postgres/TimescaleDB, reached via `externalDb.stableDns` ExternalName.
+- **Image pull:** private GitLab OCI registry `registry.margusm.dev`. `common-service`
+  `registry.enabled` makes ESO project a per-service `kubernetes.io/dockerconfigjson` secret
+  from Vault (path = `registry.vaultKey`), auto-wired into `imagePullSecrets` for the
+  Deployment (main sync) and the migration Job (a PreSync wave-2 copy
+  `<release>-registry-presync`, so the migrator image pulls before main sync). Because the
+  secret is per-service (one auth entry, its own Vault path) it just needs pull access to
+  the images it uses. Both projects live in the GitLab group `devprojects`, so one **group
+  deploy token** with `read_registry` covers backend (`devprojects/tradebot-2`) and UI
+  (`devprojects/tradebot-2-ui`); all charts point `registry.vaultKey` at the single path
+  `secret/tradebot-test/registry`.
 - **Kafka + Redis:** in-cluster under `base/tradebot-test/`. Kafka = **Strimzi 1.1.0** operator
   (KRaft, SCRAM-SHA-512, no ACLs), CRDs at **`kafka.strimzi.io/v1`** (NOT v1beta2), **Kafka 4.2.0**.
   Cluster `tradebot`, single NodePool `kafka` (controller+broker) → pod `tradebot-kafka-0`, bootstrap
@@ -40,15 +50,25 @@ onto the `skeleton-01` GitOps baseline as a practice run for the real Nortal set
   migrator only on `database/<svc>/**` changes. Runs as DB superuser `postgres` (own ESO cred).
 - **Observability:** OTLP push via Micrometer `MANAGEMENT_OTLP_*` props (via `env:`, NOT the chart's
   `observability.enabled`/agent `OTEL_*`). Optional `serviceMonitor` for in-cluster Prometheus.
+  Apps push to an **in-cluster OTel Collector** (`base/tradebot-test/otel-collector`, contrib
+  distro, plain Deployment+ConfigMap+Service — no operator) at `otel-collector.tradebot-test-base`
+  (4317 gRPC traces+logs, 4318 HTTP metrics). It fans out to the external Grafana stack on
+  dev-2-vm-1 (`192.168.40.112`): traces→Tempo `:4327`, metrics→Prometheus remote-write `:9090`,
+  logs→Loki `:3100`. Stable-name ConfigMap (prune off) → config edits need a `rollout restart`.
 
 ## Kafka auth: the `k8s` Spring profile (API repo change)
 
-App hardcodes Kafka `SASL_PLAINTEXT` + `mechanism=PLAIN` in prod; Strimzi's native KafkaUser auth
-is SCRAM-SHA-512. Solution: a `k8s` Spring profile, `SPRING_PROFILES_ACTIVE=prod,k8s`. `-prod`
-untouched + reused; `-k8s` overrides ONLY the SASL mechanism → SCRAM-SHA-512 (protocol stays
-SASL_PLAINTEXT). Per service: `.properties` (data-service, kraken-ingest, yahoo-ingest,
-order-management-service), `.yml` (gateway, bot-engine, user-service). Each uses
-`username="${KAFKA_USERNAME:<user>}" password="${KAFKA_PASSWORD}"`. `kraken-exec` not touched.
+The always-on base `application.*` holds dev defaults (hardcoded hosts/creds, Kafka
+`SASL_PLAINTEXT`+`PLAIN`); `application-prod.*` overrides them with env placeholders. Strimzi's
+native KafkaUser auth is SCRAM-SHA-512, not PLAIN. Solution: a **self-contained `k8s` profile**
+activated ALONE (`SPRING_PROFILES_ACTIVE=k8s`, NOT `prod,k8s` — we found two active profiles
+confusing). `application-k8s.*` is a full copy of `application-prod.*` with only the Kafka line
+swapped → `mechanism=SCRAM-SHA-512` + `ScramLoginModule ... username="${KAFKA_USERNAME:<user>}"
+password="${KAFKA_PASSWORD}"` (protocol stays `SASL_PLAINTEXT`, inherited from base). `-prod`
+stays untouched + reusable. Per service: `.properties` (data-service, kraken-ingest,
+yahoo-ingest, order-management-service), `.yml` (gateway, bot-engine, user-service).
+`kraken-exec` not touched. NB: k8s now duplicates prod — a prod env-wiring change must be
+mirrored into k8s (they diverge only in Kafka auth).
 
 ## Service inventory
 
@@ -76,6 +96,10 @@ UI `frontend:<sha>` (UI is a separate GitLab project → different registry base
 - `base-tradebot-test-kafka` — Kafka `tradebot` `Ready` (v4.2.0, node `tradebot-kafka-0`), 7 KafkaUsers `Ready`.
 - `tradebot-test-whoami` — Synced/Healthy (pipeline smoke test).
 - All Synced + Healthy on both axes.
+
+**NEW, not yet deployed:** `base/tradebot-test/otel-collector` (OTel Collector → external Grafana
+stack). Will become `base-tradebot-test-otel-collector` on next push. Verify pod egress to
+`192.168.40.112:{4327,9090,3100}` and that Prometheus has remote-write enabled.
 
 **GitLab auth for ArgoCD (bootstrap credential, applied manually):** `infrastructure/argocd-repo-credential.yaml`
 (SA `argocd-eso` + namespaced `SecretStore argocd-vault` + ExternalSecret → the `repository`-labeled
@@ -130,10 +154,14 @@ image tag + external DB host are real.
 
 ## Placeholders to resolve per service (marked in files)
 
-- **Registry host** for `$CI_REGISTRY_IMAGE` — using `registry.margusm.dev/margusmuru/tradebot-2`
-  (Jib: `${CI_REGISTRY}/${CI_PROJECT_PATH}/<svc>`). Confirm actual registry host.
+- **Registry host** — `registry.margusm.dev` (GitLab OCI). Both projects moved into the
+  group `devprojects`. Backend `devprojects/tradebot-2` → images
+  `registry.margusm.dev/devprojects/tradebot-2/<svc>` + `.../db-migrator-<svc>` (matches
+  `data-service/values.yaml`). UI `devprojects/tradebot-2-ui` → different path, same host.
+  Pull access = one **group `read_registry` deploy token** → `secret/tradebot-test/registry`.
 - **External DB host** — `postgres.db.internal` placeholder.
-- **OTLP endpoint** — `otel-collector.observability.example` placeholder.
+- **OTLP endpoint** — resolved: in-cluster `otel-collector.tradebot-test-base` (4317 gRPC /
+  4318 HTTP), which forwards to the external Grafana stack on dev-2-vm-1 (192.168.40.112).
 - **Image tags** — `REPLACE_ME` (CI will bump).
 
 ## Cluster prerequisites (out-of-band, done)

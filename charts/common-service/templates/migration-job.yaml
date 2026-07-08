@@ -57,6 +57,11 @@ spec:
         {{- include "common-service.selectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
+      {{- if .Values.registry.enabled }}
+      imagePullSecrets:
+        # PreSync copy (wave -2) so the migrator image can be pulled before main sync.
+        - name: {{ include "common-service.registrySecretName" . }}-presync
+      {{- end }}
       containers:
         - name: migrate
           image: "{{ required "migration.repository is required when migration.enabled" .Values.migration.repository }}:{{ required "migration.tag is required when migration.enabled" .Values.migration.tag }}"

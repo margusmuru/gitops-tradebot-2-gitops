@@ -55,6 +55,7 @@ an OCI registry — each service directory is a Kustomize directory (`kustomizat
 │   └── tradebot-test/              # platform instances (operators are build-provided)
 │       ├── eso/                    # tradebot-vault ClusterSecretStore + SA (ESO -> Vault)
 │       ├── kafka/                  # Strimzi Kafka (KRaft) + KafkaUsers
+│       ├── otel-collector/         # OTel Collector -> external Grafana stack (Tempo/Prom/Loki)
 │       └── redis/                  # shared Redis StatefulSet
 ├── environments/
 │   └── tradebot-test/              # the single environment today
@@ -166,7 +167,7 @@ image:
   repository: <registry>/<service>
   tag: <commit-sha>
 env:
-  SPRING_PROFILES_ACTIVE: prod,k8s        # k8s profile: see "Spring profiles" below
+  SPRING_PROFILES_ACTIVE: k8s             # self-contained k8s profile: see "Spring profiles" below
   KAFKA_BOOTSTRAP_SERVER_URL: tradebot-kafka-bootstrap.tradebot-test-base:9092
   KAFKA_USERNAME: <kafka-user>
 secrets:
@@ -185,13 +186,17 @@ The ApplicationSet picks up the new directory on the next refresh.
 
 ## Spring profiles (the `k8s` profile)
 
-Services run with `SPRING_PROFILES_ACTIVE=prod,k8s`. The existing `prod` profile
-(unchanged, still used by the docker-compose deployment) supplies all env-driven config;
-the **`k8s` profile layers on top and overrides only the Kafka SASL mechanism** to
-`SCRAM-SHA-512`, because the in-cluster Strimzi operator's native `KafkaUser` auth is
-SCRAM (not the `PLAIN` used elsewhere). The `k8s` profile files live in the API repo
-(`application-k8s.{properties,yml}` per service). Kafka username/password come from the
-`KAFKA_USERNAME` env and the Vault-projected `KAFKA_PASSWORD`.
+Services run with `SPRING_PROFILES_ACTIVE=k8s` — a **single, self-contained** profile
+(activating two profiles at once was confusing). The always-on base `application.*` supplies
+env-agnostic defaults; the `k8s` profile overrides every environment-specific value (hosts,
+credentials, OTLP endpoints, Kafka auth), exactly as `prod` does. It is in fact a **copy of
+the `prod` profile** with one change: Kafka SASL mechanism → `SCRAM-SHA-512` (protocol stays
+`SASL_PLAINTEXT`), because the in-cluster Strimzi operator's native `KafkaUser` auth is SCRAM,
+not the `PLAIN` used elsewhere. The existing `prod` profile is left **unchanged** (still used
+by the docker-compose deployment). The `k8s` files live in the API repo
+(`application-k8s.{properties,yml}` per service); Kafka username/password come from the
+`KAFKA_USERNAME` env and the Vault-projected `KAFKA_PASSWORD`. Note: `k8s` now duplicates
+`prod`, so a future `prod` env-wiring change must be mirrored into `k8s`.
 
 ## Health probes
 
@@ -284,8 +289,9 @@ The ArgoCD repo-server bundles a compatible helm, so this only affects local val
 
 - **In-repo chart blast radius.** Editing `charts/common-service` re-renders every service
   using it on the next sync — review the ArgoCD diff before merging chart changes.
-- **Placeholders.** Replace the registry host, the external DB host, the OTLP endpoint,
-  and image tags before real use (all marked in `data-service/values.yaml`).
+- **Placeholders.** Replace the external DB host and image tags before real use (marked in
+  `data-service/values.yaml`). Registry host (`registry.margusm.dev/devprojects/...`) and the
+  OTLP endpoint (in-cluster `otel-collector.tradebot-test-base`) are now resolved.
 - **Sync ≠ Health in ArgoCD.** A failed apply surfaces as `OutOfSync` + a `SyncError`, and
   CRs without a health check report `Healthy` by default — so an app can look green while a
   resource silently failed to apply. Judge by Sync status + the last sync result, not the

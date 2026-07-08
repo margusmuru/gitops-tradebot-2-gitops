@@ -59,7 +59,9 @@ an OCI registry — each service directory is a Kustomize directory (`kustomizat
 │       └── redis/                  # shared Redis StatefulSet
 ├── environments/
 │   └── tradebot-test/              # the single environment today
-│       └── data-service/           # reference backend (live: DB + Redis + Kafka + migration + OTLP)
+│       ├── common-values.yaml      # env-wide Helm defaults, merged under each service
+│       ├── data-service/           # reference backend (live: DB + Redis + Kafka + migration + OTLP)
+│       └── gateway/                # API gateway (R2DBC, downstream calls; held out until images built)
 ├── vault/                          # Vault policy + setup commands (manual, root token; not ArgoCD)
 └── infrastructure/                 # out-of-band bootstrap: ArgoCD git credential (not read by ArgoCD)
 ```

@@ -1,0 +1,36 @@
+# Shared defaults for every common-service backend in the tradebot-test env. Merged UNDER
+# each service's values.yaml (service values win on conflict). Wired via each service
+# kustomization's `valuesFile: ../common-values.yaml` + `additionalValuesFiles: [values.yaml]`.
+# NOT a service directory, so the workload ApplicationSet ignores it.
+
+replicaCount: 1
+
+strategy:
+  type: Recreate
+
+registry:
+  enabled: true
+  server: registry.margusm.dev
+  vaultKey: tradebot-test/registry
+
+env:
+  SPRING_PROFILES_ACTIVE: k8s
+  KAFKA_BOOTSTRAP_SERVER_URL: tradebot-kafka-bootstrap.tradebot-test-base:9092
+  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector.tradebot-test-base:4318/v1/metrics
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector.tradebot-test-base:4317
+  MANAGEMENT_OTLP_LOGGING_ENDPOINT: http://otel-collector.tradebot-test-base:4317
+
+secrets:
+  mode: eso
+  eso:
+    secretStoreRef:
+      name: tradebot-vault
+      kind: ClusterSecretStore
+    refreshInterval: 1h
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 2Gi
+  limits:
+    memory: 2Gi

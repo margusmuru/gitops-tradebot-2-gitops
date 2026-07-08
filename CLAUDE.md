@@ -23,6 +23,14 @@ onto the `skeleton-01` GitOps baseline as a practice run for the real Nortal set
 - **Env name:** `tradebot-test` → app ns `tradebot-test-app`, base ns `tradebot-test-base`.
 - **Render:** Kustomize+Helm hybrid, in-repo charts (`common-service`, `mfe`), no OCI.
   Needs `argocd-cm` `kustomize.buildOptions: --enable-helm --load-restrictor LoadRestrictionsNone` (set).
+- **Values layering (DRY):** env-wide defaults live in `environments/tradebot-test/common-values.yaml`;
+  each service kustomization sets `valuesFile: ../common-values.yaml` + `additionalValuesFiles:
+  [values.yaml]` so Helm merges common UNDER the service (service wins). Common file holds:
+  registry block, shared `env` (profile, Kafka bootstrap, OTLP endpoints), ESO store/refresh,
+  and the default resource floor (**2 cpu / 2Gi**; data-service overrides to 4/4Gi). Helm
+  deep-merges maps but REPLACES lists — so `secrets.eso.data` stays per-service. The `../` path
+  needs LoadRestrictionsNone (already set). `common-values.yaml` is a file, not a dir, so the
+  workload ApplicationSet ignores it.
 - **Secrets:** ESO + Vault, **per-project scoped**. Store = **`tradebot-vault`** ClusterSecretStore
   (in `base/tradebot-test/eso/`), authenticating as SA `tradebot-eso` via Vault role
   `tradebot-test-eso` (scoped policy: read `secret/data/tradebot-test/*` only). Vault paths:

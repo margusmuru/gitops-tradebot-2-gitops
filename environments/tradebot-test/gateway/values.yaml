@@ -2,13 +2,6 @@ image:
   repository: registry.margusm.dev/devprojects/tradebot-2/gateway
   tag: REPLACE_ME
 
-replicaCount: 1
-
-registry:
-  enabled: true
-  server: registry.margusm.dev
-  vaultKey: tradebot-test/registry
-
 containerPort: 8080
 service:
   port: 8080
@@ -19,18 +12,13 @@ probes:
     path: /actuator/health/readiness
 
 env:
-  SPRING_PROFILES_ACTIVE: k8s
   GATEWAY_REDIS_HOST: redis.tradebot-test-base
   GATEWAY_REDIS_PORT: "6379"
-  KAFKA_BOOTSTRAP_SERVER_URL: tradebot-kafka-bootstrap.tradebot-test-base:9092
   KAFKA_USERNAME: gateway-service
   DATA_SERVICE_URL: http://data-service:8081
   USER_SERVICE_URL: http://user-service:8086
   BOT_ENGINE_URL: http://bot-engine:8087
   ORDER_MANAGEMENT_SERVICE_URL: http://order-management-service:8082
-  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector.tradebot-test-base:4318/v1/metrics
-  MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector.tradebot-test-base:4317
-  MANAGEMENT_OTLP_LOGGING_ENDPOINT: http://otel-collector.tradebot-test-base:4317
 
 externalDb:
   enabled: true
@@ -42,12 +30,7 @@ externalDb:
     DB_GATEWAY_URL: r2dbc:postgresql://gateway-db:5534/tradebot?schema=tradebot
 
 secrets:
-  mode: eso
   eso:
-    secretStoreRef:
-      name: tradebot-vault
-      kind: ClusterSecretStore
-    refreshInterval: 1h
     data:
       - secretKey: DB_GATEWAY_APP_PASSWORD
         remoteRef: { key: tradebot-test/gateway, property: db-password }
@@ -69,10 +52,3 @@ migration:
         remoteRef: { key: tradebot-test/gateway, property: db-migrator-username }
       - secretKey: LIQUIBASE_DB_PASSWORD
         remoteRef: { key: tradebot-test/gateway, property: db-migrator-password }
-
-resources:
-  requests:
-    cpu: 200m
-    memory: 512Mi
-  limits:
-    memory: 1Gi

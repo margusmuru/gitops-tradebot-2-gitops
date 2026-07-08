@@ -7,4 +7,6 @@ helmGlobals:
 helmCharts:
   - name: common-service
     releaseName: gateway
-    valuesFile: values.yaml
+    valuesFile: ../common-values.yaml
+    additionalValuesFiles:
+      - values.yaml

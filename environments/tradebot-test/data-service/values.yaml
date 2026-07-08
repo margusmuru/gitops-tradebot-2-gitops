@@ -1,77 +1,40 @@
 # data-service - reference backend for the tradebot-test environment.
-# Exercises every dependency: external Postgres/Timescale (stable DNS + ESO creds),
-# in-cluster Redis + Kafka (base components), ESO secrets, Liquibase PreSync migration,
-# and the self-contained k8s Spring profile (mirrors prod, Kafka on SCRAM-SHA-512).
-# Values here are merged over charts/common-service/values.yaml.
+# Common fields (registry, k8s profile, Kafka bootstrap, OTLP, ESO store, default resources)
+# live in ../common-values.yaml and are merged UNDER this file. Only service-specifics here.
 
 image:
   repository: registry.margusm.dev/devprojects/tradebot-2/data-service
   tag: 31bc5b14
 
-replicaCount: 1
-
-# data-service runs singleton scheduled work (gap-watchdog crons, backfill-job dispatch), so
-# two instances must never run at once. Recreate terminates the old pod before starting the
-# new one on every version change (accepts a brief downtime gap instead of an overlap).
-strategy:
-  type: Recreate
-
-# Pull backend images from the private GitLab registry. Credential (a group-scoped
-# read_registry deploy token) lives in Vault at secret/tradebot-test/registry and is
-# projected to a dockerconfigjson secret by ESO. The same credential/host also serves the
-# UI image path (different project, same host).
-registry:
-  enabled: true
-  server: registry.margusm.dev
-  vaultKey: tradebot-test/registry
-
 containerPort: 8081
 service:
   port: 8081
 
-# data-service serves under context-path /data-service, so Actuator lives there too.
 probes:
   liveness:
     path: /data-service/actuator/health/liveness
   readiness:
     path: /data-service/actuator/health/readiness
 
-# Non-secret env. Activates the self-contained `k8s` profile (application-k8s.properties):
-# it mirrors prod's env-driven wiring and uses SCRAM-SHA-512 for Kafka. In-cluster hosts
-# point at base services. (The always-on base application.properties still applies underneath.)
+# Service-specific env only (SPRING_PROFILES_ACTIVE / Kafka bootstrap / OTLP are in common-values).
 env:
-  SPRING_PROFILES_ACTIVE: k8s
   DATA_SERVICE_REDIS_HOST: redis.tradebot-test-base
   DATA_SERVICE_REDIS_PORT: "6379"
-  KAFKA_BOOTSTRAP_SERVER_URL: tradebot-kafka-bootstrap.tradebot-test-base:9092
   KAFKA_USERNAME: data-service
-  # OTLP push to the in-cluster Collector (base/tradebot-test/otel-collector), which forwards
-  # to the external Grafana stack. Micrometer props (not the OTEL_* agent vars). Tracing +
-  # logging over gRPC (4317); metrics over HTTP (4318, /v1/metrics).
-  MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector.tradebot-test-base:4318/v1/metrics
-  MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector.tradebot-test-base:4317
-  MANAGEMENT_OTLP_LOGGING_ENDPOINT: http://otel-collector.tradebot-test-base:4317
 
-# External Postgres/Timescale on a separate machine, reached via a stable in-cluster name.
+# External Postgres/Timescale, reached via a stable in-cluster ExternalName alias.
 externalDb:
   enabled: true
   stableDns:
     enabled: true
     serviceName: data-service-db
-    externalName: cloudy-vm.margusm.dev     # real Timescale/Postgres host (ExternalName CNAME)
+    externalName: cloudy-vm.margusm.dev
   env:
-    # ExternalName does NOT remap ports, so the URL must carry the real DB port (5532).
     DB_DATA_SERVICE_URL: jdbc:postgresql://data-service-db:5532/tradebot
 
-# App runtime secrets, projected from Vault. DB user is the app user (tradebot); only the
-# password is secret. Redis + Kafka passwords come from the shared/per-user Vault paths.
+# ESO store + refreshInterval come from common-values; only the per-service data list here.
 secrets:
-  mode: eso
   eso:
-    secretStoreRef:
-      name: tradebot-vault
-      kind: ClusterSecretStore
-    refreshInterval: 1h
     data:
       - secretKey: DB_DATA_SERVICE_APP_PASSWORD
         remoteRef: { key: tradebot-test/data-service, property: db-password }
@@ -80,15 +43,10 @@ secrets:
       - secretKey: KAFKA_PASSWORD
         remoteRef: { key: tradebot-test/kafka/data-service, property: password }
 
-# Liquibase migration as an ArgoCD PreSync hook. Runs as the DB superuser (postgres),
-# so its own ExternalSecret pulls the migrator credential (separate from the app user).
 migration:
   enabled: true
   repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-data-service
   tag: 0f277bab
-  # Real DB host, NOT the data-service-db alias: the migration Job is a PreSync hook and runs
-  # BEFORE the main sync creates the ExternalName Service, so the alias can't resolve yet.
-  # (The long-running app still uses the alias via DB_DATA_SERVICE_URL.)
   dbUrl: jdbc:postgresql://cloudy-vm.margusm.dev:5532/tradebot
   eso:
     data:
@@ -99,7 +57,7 @@ migration:
 
 resources:
   requests:
-    cpu: 250m
-    memory: 768Mi
+    cpu: "4"
+    memory: 4Gi
   limits:
-    memory: 1536Mi
+    memory: 4Gi

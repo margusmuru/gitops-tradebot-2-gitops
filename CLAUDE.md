@@ -106,9 +106,13 @@ UI `frontend:<sha>` (UI is a separate GitLab project → different registry base
 - `tradebot-test-whoami` — Synced/Healthy (pipeline smoke test).
 - All Synced + Healthy on both axes.
 
-**NEW, not yet deployed:** `base/tradebot-test/otel-collector` (OTel Collector → external Grafana
-stack). Will become `base-tradebot-test-otel-collector` on next push. Verify pod egress to
-`192.168.40.112:{4327,9090,3100}` and that Prometheus has remote-write enabled.
+- `base-tradebot-test-otel-collector` — OTel Collector Running (config-revision 2), forwards to
+  the external Grafana stack (dev-2-vm-1). Node egress to `:4327/:9090/:3100` verified.
+
+**`tradebot-test-data-service` is LIVE and green** (first real backend). Synced/Healthy; pod
+Running (Recreate strategy); PreSync migration Job Completed; connected to Timescale
+(cloudy-vm:5532 via `data-service-db` alias), Redis, Kafka (SCRAM); logs in Loki + metrics
+publishing. Images `data-service:31bc5b14` / `db-migrator-data-service:0f277bab`.
 
 **GitLab auth for ArgoCD (bootstrap credential, applied manually):** `infrastructure/argocd-repo-credential.yaml`
 (SA `argocd-eso` + namespaced `SecretStore argocd-vault` + ExternalSecret → the `repository`-labeled
@@ -119,8 +123,8 @@ Secret). Vault side: `secret/argocd/tradebot-2-gitops` (project deploy token, re
 `vault-tokenreview` ClusterRoleBinding. Strimzi operator installed via homelab
 `playbooks/906-strimzi-kafka-operator.yml` (chart 1.1.0, `watchAnyNamespace`).
 
-**`data-service` is present but `exclude: true`** in the workload appset — kept out until its
-image tag + external DB host are real.
+**`data-service` is ENABLED** (exclude removed from the workload appset; a commented-out
+`exclude: true` example remains for reference). It's the proven reference for the fan-out.
 
 ## Deployment gotchas / lessons (all resolved)
 

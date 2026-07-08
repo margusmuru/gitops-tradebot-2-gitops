@@ -57,6 +57,9 @@ spec:
         {{- include "common-service.selectorLabels" . | nindent 8 }}
     spec:
       restartPolicy: Never
+      # Migrator needs no K8s API either. It runs at PreSync (before the app SA exists), so it
+      # stays on the default SA but drops the token at the pod level.
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
       {{- if .Values.registry.enabled }}
       imagePullSecrets:
         # PreSync copy (wave -2) so the migrator image can be pulled before main sync.

@@ -36,6 +36,8 @@ strategy: {}
 serviceAccount:
   create: false
   name: ""
+  # Don't mount the K8s API token (apps need no API access). Applies to the SA object.
+  automountToken: false
 
 service:
   type: ClusterIP

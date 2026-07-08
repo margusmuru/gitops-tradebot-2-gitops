@@ -8,6 +8,10 @@ replicaCount: 1
 strategy:
   type: Recreate
 
+serviceAccount:
+  create: true
+  automountToken: false
+
 registry:
   enabled: true
   server: registry.margusm.dev

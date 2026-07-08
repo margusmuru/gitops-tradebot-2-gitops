@@ -79,6 +79,14 @@ vault kv put secret/tradebot-test/data-service \
   db-password='CHANGE_ME' \
   db-migrator-username='postgres' \
   db-migrator-password='CHANGE_ME'
+
+# gateway: same DB creds shape PLUS a JWT signing secret (jwt-secret -> JWT_SECRET).
+# Gateway DB is a separate instance (cloudy-vm:5534), schema `tradebot`.
+vault kv put secret/tradebot-test/gateway \
+  db-password='CHANGE_ME' \
+  db-migrator-username='postgres' \
+  db-migrator-password='CHANGE_ME' \
+  jwt-secret='CHANGE_ME'
 ```
 
 (As more backends are onboarded, add `secret/tradebot-test/<service>` with `db-password`

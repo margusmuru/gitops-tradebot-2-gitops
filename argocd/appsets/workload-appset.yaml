@@ -24,7 +24,7 @@ spec:
           # Every environments/<env>/<service>/ is discovered and synced. Platform
           # (base/kafka, base/redis, ESO/Vault, otel-collector) must be healthy before a
           # backend syncs — they already are. data-service is now enabled (image tags real,
-          # DB reachable, Vault keys seeded). `whoami` remains the zero-dependency smoke test.
+          # DB reachable, Vault keys seeded).
           - path: environments/*/*
           # To hold a service OUT of sync (e.g. deps not ready, or a placeholder image),
           # add an explicit entry with exclude: true — it overrides the glob above:

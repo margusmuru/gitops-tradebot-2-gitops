@@ -59,8 +59,7 @@ an OCI registry — each service directory is a Kustomize directory (`kustomizat
 │       └── redis/                  # shared Redis StatefulSet
 ├── environments/
 │   └── tradebot-test/              # the single environment today
-│       ├── whoami/                 # minimal zero-dependency smoke test (start here)
-│       └── data-service/           # reference backend (held out via `exclude` until image+DB real)
+│       └── data-service/           # reference backend (live: DB + Redis + Kafka + migration + OTLP)
 ├── vault/                          # Vault policy + setup commands (manual, root token; not ArgoCD)
 └── infrastructure/                 # out-of-band bootstrap: ArgoCD git credential (not read by ArgoCD)
 ```
@@ -126,20 +125,17 @@ Then:
 
 ArgoCD then discovers and syncs everything under `environments/` and `base/`.
 
-## Quickstart (minimal)
+## Quickstart
 
-To prove the pipeline end-to-end with no external dependencies, start with the `whoami`
-service (`environments/tradebot-test/whoami/`): a tiny public image — no secrets, no DB,
-no Kafka, no ingress. It needs only ArgoCD.
-
-Each service is its own ArgoCD Application, so `whoami` goes green on its own regardless of
-the rest. (`data-service` is currently held out via `exclude: true`; the base platform is
-already up.)
+The base platform (ESO/Vault, Kafka, Redis, OTel Collector) and the reference backend
+`data-service` are live. Each service is its own ArgoCD Application (from the workload
+ApplicationSet), so services go green independently.
 
 ```bash
-argocd app list                                    # tradebot-test-whoami -> Synced/Healthy
-kubectl -n tradebot-test-app port-forward svc/whoami 8080:80
-curl localhost:8080
+argocd app list                                    # base-tradebot-test-* + tradebot-test-data-service
+kubectl -n tradebot-test-app get pods              # data-service Running
+kubectl -n tradebot-test-app port-forward svc/data-service 8081:8081
+curl localhost:8081/data-service/actuator/health   # {"status":"UP"}
 ```
 
 ## Adding a service
@@ -203,8 +199,8 @@ by the docker-compose deployment). The `k8s` files live in the API repo
 `common-service` defaults liveness/readiness to Spring Boot Actuator's health-group
 endpoints. **Mind the context path**: a service with `server.servlet.context-path`
 serves Actuator under it, so override the probe path accordingly — e.g. `data-service`
-uses `/data-service/actuator/health/liveness`. Non-Actuator apps (like `whoami`, and the
-`mfe` chart) probe `/`.
+uses `/data-service/actuator/health/liveness`. Non-Actuator apps (like the `mfe` chart)
+probe `/`.
 
 ## Secrets (ESO + Vault)
 

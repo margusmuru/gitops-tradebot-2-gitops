@@ -103,7 +103,6 @@ UI `frontend:<sha>` (UI is a separate GitLab project → different registry base
 - `base-tradebot-test-eso` — `tradebot-vault` ClusterSecretStore `Valid`, SA `tradebot-eso`.
 - `base-tradebot-test-redis` — `redis-0` Running (password from Vault via `redis-auth`).
 - `base-tradebot-test-kafka` — Kafka `tradebot` `Ready` (v4.2.0, node `tradebot-kafka-0`), 7 KafkaUsers `Ready`.
-- `tradebot-test-whoami` — Synced/Healthy (pipeline smoke test).
 - All Synced + Healthy on both axes.
 
 - `base-tradebot-test-otel-collector` — OTel Collector Running (config-revision 2), forwards to

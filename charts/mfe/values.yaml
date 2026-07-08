@@ -10,9 +10,21 @@ image:
 
 imagePullSecrets: []
 
+registry:
+  enabled: false
+  server: ""
+  vaultKey: ""
+  secretName: ""
+  refreshInterval: 1h
+  secretStoreRef:
+    name: tradebot-vault
+    kind: ClusterSecretStore
+
 replicaCount: 1
 
 containerPort: 80
+
+env: {}
 
 service:
   type: ClusterIP

@@ -1,0 +1,18 @@
+image:
+  repository: registry.margusm.dev/devprojects/tradebot-2-ui/frontend
+  tag: f9bda122
+
+registry:
+  enabled: true
+  server: registry.margusm.dev
+  vaultKey: tradebot-test/registry
+
+env:
+  GATEWAY_UPSTREAM: gateway.tradebot-test-app.svc.cluster.local:8080
+
+ingress:
+  enabled: true
+  className: traefik
+  host: tradebot.prod.margusm.dev
+  path: /
+  pathType: Prefix

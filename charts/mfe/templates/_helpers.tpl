@@ -21,3 +21,17 @@ helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 app.kubernetes.io/name: {{ include "mfe.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
+
+{{- define "mfe.registrySecretName" -}}
+{{- .Values.registry.secretName | default (printf "%s-registry" (include "mfe.fullname" .)) -}}
+{{- end -}}
+
+{{- define "mfe.imagePullSecrets" -}}
+{{- $secrets := .Values.imagePullSecrets | default list -}}
+{{- if .Values.registry.enabled -}}
+{{- $secrets = append $secrets (dict "name" (include "mfe.registrySecretName" .)) -}}
+{{- end -}}
+{{- if $secrets -}}
+{{- toYaml $secrets -}}
+{{- end -}}
+{{- end -}}

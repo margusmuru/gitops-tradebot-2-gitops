@@ -18,9 +18,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
-      {{- with .Values.imagePullSecrets }}
+      {{- with (include "mfe.imagePullSecrets" .) }}
       imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
+        {{- . | nindent 8 }}
       {{- end }}
       containers:
         - name: {{ include "mfe.name" . }}
@@ -29,6 +29,13 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
+          {{- with .Values.env }}
+          env:
+            {{- range $k, $v := . }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- end }}
           readinessProbe:
             httpGet:
               path: /

@@ -26,10 +26,10 @@ spec:
           # backend syncs — they already are. data-service is now enabled (image tags real,
           # DB reachable, Vault keys seeded).
           - path: environments/*/*
-          # Held OUT until ready (DB host/port + Vault keys + real image tags). An explicit
-          # entry with exclude: true overrides the glob above; remove it to enable the service.
-          - path: environments/tradebot-test/gateway
-            exclude: true
+          # To hold a service OUT until ready (deps/Vault/images not real), add an explicit
+          # entry with exclude: true — it overrides the glob above. Remove it to enable:
+          # - path: environments/tradebot-test/gateway
+          #   exclude: true
   template:
     metadata:
       # path.segments = [environments, <env>, <service>]

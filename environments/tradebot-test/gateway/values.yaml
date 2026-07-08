@@ -1,6 +1,6 @@
 image:
   repository: registry.margusm.dev/devprojects/tradebot-2/gateway
-  tag: REPLACE_ME
+  tag: 31bc5b14
 
 containerPort: 8080
 service:
@@ -44,7 +44,7 @@ secrets:
 migration:
   enabled: true
   repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-gateway
-  tag: REPLACE_ME
+  tag: 0f277bab
   dbUrl: jdbc:postgresql://cloudy-vm.margusm.dev:5534/tradebot
   eso:
     data:

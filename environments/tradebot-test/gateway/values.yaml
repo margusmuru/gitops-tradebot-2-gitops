@@ -1,6 +1,6 @@
 image:
   repository: registry.margusm.dev/devprojects/tradebot-2/gateway
-  tag: 31bc5b14
+  tag: 3a2da2b1
 
 containerPort: 8080
 service:

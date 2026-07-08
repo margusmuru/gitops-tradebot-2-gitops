@@ -34,7 +34,8 @@ secrets:
 
 resources:
   requests:
-    cpu: "2"
+    cpu: "250m"
     memory: 2Gi
   limits:
+    cpu: "2"
     memory: 2Gi

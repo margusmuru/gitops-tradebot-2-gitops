@@ -116,10 +116,20 @@ UI `frontend:<sha>` (UI is a separate GitLab project → different registry base
 - `base-tradebot-test-otel-collector` — OTel Collector Running (config-revision 2), forwards to
   the external Grafana stack (dev-2-vm-1). Node egress to `:4327/:9090/:3100` verified.
 
-**`tradebot-test-data-service` is LIVE and green** (first real backend). Synced/Healthy; pod
-Running (Recreate strategy); PreSync migration Job Completed; connected to Timescale
-(cloudy-vm:5532 via `data-service-db` alias), Redis, Kafka (SCRAM); logs in Loki + metrics
-publishing. Images `data-service:31bc5b14` / `db-migrator-data-service:0f277bab`.
+**`data-service` + `gateway` are LIVE and green** (first two backends). Both Synced/Healthy,
+pods Running, migrations Completed. gateway reaches data-service in-cluster (`data-service:8081`).
+Images: `data-service:31bc5b14`, `gateway:3a2da2b1`, migrators `db-migrator-*:0f277bab`.
+
+**Resource model (learned the hard way):** nodes are only **4 cores** each. `requests.cpu` is a
+hard reservation for scheduling — a 4-core *request* is unschedulable (data-service sat Pending).
+So `requests.cpu` is small (common `250m`, data-service `500m`) and the "needs N cores" intent
+lives in `limits.cpu` (burst ceiling: common `2`, data-service `4`). Memory `request == limit`
+(2Gi / 4Gi). A big CPU *request* ≠ what you want; it just blocks scheduling.
+
+**gateway actuator 401 (learned):** gateway has Spring Security (`.anyExchange().authenticated()`)
+which also guarded `/actuator/**` → kubelet probes got 401 → crashloop. Fixed in the API repo
+`gateway/config/SecurityConfig.java`: `permitAll()` for `/actuator/health/{liveness,readiness}`
+(probe groups only). App-image change → rebuild. Any future secured service needs the same.
 
 **GitLab auth for ArgoCD (bootstrap credential, applied manually):** `infrastructure/argocd-repo-credential.yaml`
 (SA `argocd-eso` + namespaced `SecretStore argocd-vault` + ExternalSecret → the `repository`-labeled

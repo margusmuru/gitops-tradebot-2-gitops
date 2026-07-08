@@ -1,0 +1,48 @@
+migration:
+  enabled: true
+  repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-user-service
+  tag: 0f277bab
+  dbUrl: jdbc:postgresql://cloudy-vm.margusm.dev:5533/tradebot
+  eso:
+    data:
+      - secretKey: LIQUIBASE_DB_USERNAME
+        remoteRef: { key: tradebot-test/user-service, property: db-migrator-username }
+      - secretKey: LIQUIBASE_DB_PASSWORD
+        remoteRef: { key: tradebot-test/user-service, property: db-migrator-password }
+
+image:
+  repository: registry.margusm.dev/devprojects/tradebot-2/user-service
+  tag: 31bc5b14
+
+containerPort: 8086
+service:
+  port: 8086
+probes:
+  liveness:
+    path: /user-service/actuator/health/liveness
+  readiness:
+    path: /user-service/actuator/health/readiness
+
+env:
+  USER_SERVICE_REDIS_HOST: redis.tradebot-test-base
+  USER_SERVICE_REDIS_PORT: "6379"
+  KAFKA_USERNAME: user-service
+
+externalDb:
+  enabled: true
+  stableDns:
+    enabled: true
+    serviceName: user-service-db
+    externalName: cloudy-vm.margusm.dev
+  env:
+    DB_USER_SERVICE_URL: jdbc:postgresql://user-service-db:5533/tradebot
+
+secrets:
+  eso:
+    data:
+      - secretKey: DB_USER_SERVICE_APP_PASSWORD
+        remoteRef: { key: tradebot-test/user-service, property: db-password }
+      - secretKey: USER_SERVICE_REDIS_PASSWORD
+        remoteRef: { key: tradebot-test/redis, property: password }
+      - secretKey: KAFKA_PASSWORD
+        remoteRef: { key: tradebot-test/kafka/user-service, property: password }

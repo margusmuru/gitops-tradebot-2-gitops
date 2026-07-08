@@ -2,6 +2,18 @@
 # Common fields (registry, k8s profile, Kafka bootstrap, OTLP, ESO store, default resources)
 # live in ../common-values.yaml and are merged UNDER this file. Only service-specifics here.
 
+migration:
+  enabled: true
+  repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-data-service
+  tag: 0f277bab
+  dbUrl: jdbc:postgresql://cloudy-vm.margusm.dev:5532/tradebot
+  eso:
+    data:
+      - secretKey: LIQUIBASE_DB_USERNAME
+        remoteRef: { key: tradebot-test/data-service, property: db-migrator-username }
+      - secretKey: LIQUIBASE_DB_PASSWORD
+        remoteRef: { key: tradebot-test/data-service, property: db-migrator-password }
+
 image:
   repository: registry.margusm.dev/devprojects/tradebot-2/data-service
   tag: 31bc5b14
@@ -42,18 +54,6 @@ secrets:
         remoteRef: { key: tradebot-test/redis, property: password }
       - secretKey: KAFKA_PASSWORD
         remoteRef: { key: tradebot-test/kafka/data-service, property: password }
-
-migration:
-  enabled: true
-  repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-data-service
-  tag: 0f277bab
-  dbUrl: jdbc:postgresql://cloudy-vm.margusm.dev:5532/tradebot
-  eso:
-    data:
-      - secretKey: LIQUIBASE_DB_USERNAME
-        remoteRef: { key: tradebot-test/data-service, property: db-migrator-username }
-      - secretKey: LIQUIBASE_DB_PASSWORD
-        remoteRef: { key: tradebot-test/data-service, property: db-migrator-password }
 
 resources:
   requests:

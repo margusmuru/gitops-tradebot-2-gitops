@@ -1,3 +1,15 @@
+migration:
+  enabled: true
+  repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-gateway
+  tag: 0f277bab
+  dbUrl: jdbc:postgresql://cloudy-vm.margusm.dev:5534/tradebot
+  eso:
+    data:
+      - secretKey: LIQUIBASE_DB_USERNAME
+        remoteRef: { key: tradebot-test/gateway, property: db-migrator-username }
+      - secretKey: LIQUIBASE_DB_PASSWORD
+        remoteRef: { key: tradebot-test/gateway, property: db-migrator-password }
+
 image:
   repository: registry.margusm.dev/devprojects/tradebot-2/gateway
   tag: 3a2da2b1
@@ -40,15 +52,3 @@ secrets:
         remoteRef: { key: tradebot-test/kafka/gateway-service, property: password }
       - secretKey: JWT_SECRET
         remoteRef: { key: tradebot-test/gateway, property: jwt-secret }
-
-migration:
-  enabled: true
-  repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-gateway
-  tag: 0f277bab
-  dbUrl: jdbc:postgresql://cloudy-vm.margusm.dev:5534/tradebot
-  eso:
-    data:
-      - secretKey: LIQUIBASE_DB_USERNAME
-        remoteRef: { key: tradebot-test/gateway, property: db-migrator-username }
-      - secretKey: LIQUIBASE_DB_PASSWORD
-        remoteRef: { key: tradebot-test/gateway, property: db-migrator-password }

@@ -37,7 +37,7 @@ data:
 
     exporters:
       # 1. TRACES -> Tempo (gRPC) on dev-2-vm-1 (192.168.40.112)
-      otlp/tempo:
+      otlp_grpc/tempo:
         endpoint: "192.168.40.112:4327"
         tls:
           insecure: true
@@ -50,7 +50,7 @@ data:
           enabled: true
 
       # 3. LOGS -> Loki (OTLP HTTP)
-      otlphttp/loki:
+      otlp_http/loki:
         endpoint: "http://192.168.40.112:3100/otlp"
         tls:
           insecure: true
@@ -69,7 +69,7 @@ data:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, resource, batch]
-          exporters: [otlp/tempo]
+          exporters: [otlp_grpc/tempo]
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, resource, batch]
@@ -77,4 +77,4 @@ data:
         logs:
           receivers: [otlp]
           processors: [memory_limiter, resource, batch]
-          exporters: [otlphttp/loki]
+          exporters: [otlp_http/loki]

@@ -99,6 +99,13 @@ vault kv put secret/tradebot-test/bot-engine \
   db-password='CHANGE_ME' \
   db-migrator-username='postgres' \
   db-migrator-password='CHANGE_ME'
+
+# order-management-service: DB creds. NB Vault path is the full service name, but its Kafka
+# user is `oms-service` (secret/tradebot-test/kafka/oms-service, already seeded).
+vault kv put secret/tradebot-test/order-management-service \
+  db-password='CHANGE_ME' \
+  db-migrator-username='postgres' \
+  db-migrator-password='CHANGE_ME'
 ```
 
 (As more backends are onboarded, add `secret/tradebot-test/<service>` with `db-password`

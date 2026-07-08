@@ -1,0 +1,49 @@
+migration:
+  enabled: true
+  repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-order-management-service
+  tag: 0f277bab
+  dbUrl: jdbc:postgresql://cloudy-vm.margusm.dev:5535/tradebot
+  eso:
+    data:
+      - secretKey: LIQUIBASE_DB_USERNAME
+        remoteRef: { key: tradebot-test/order-management-service, property: db-migrator-username }
+      - secretKey: LIQUIBASE_DB_PASSWORD
+        remoteRef: { key: tradebot-test/order-management-service, property: db-migrator-password }
+
+image:
+  repository: registry.margusm.dev/devprojects/tradebot-2/order-management-service
+  tag: 31bc5b14
+
+containerPort: 8082
+service:
+  port: 8082
+probes:
+  liveness:
+    path: /order-management-service/actuator/health/liveness
+  readiness:
+    path: /order-management-service/actuator/health/readiness
+
+env:
+  ORDER_MANAGEMENT_SERVICE_REDIS_HOST: redis.tradebot-test-base
+  ORDER_MANAGEMENT_SERVICE_REDIS_PORT: "6379"
+  KAFKA_USERNAME: oms-service
+  DATA_SERVICE_URL: http://data-service:8081
+
+externalDb:
+  enabled: true
+  stableDns:
+    enabled: true
+    serviceName: order-management-service-db
+    externalName: cloudy-vm.margusm.dev
+  env:
+    DB_OMS_URL: jdbc:postgresql://order-management-service-db:5535/tradebot
+
+secrets:
+  eso:
+    data:
+      - secretKey: DB_OMS_APP_PASSWORD
+        remoteRef: { key: tradebot-test/order-management-service, property: db-password }
+      - secretKey: ORDER_MANAGEMENT_SERVICE_REDIS_PASSWORD
+        remoteRef: { key: tradebot-test/redis, property: password }
+      - secretKey: KAFKA_PASSWORD
+        remoteRef: { key: tradebot-test/kafka/oms-service, property: password }

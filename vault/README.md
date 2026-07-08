@@ -93,6 +93,12 @@ vault kv put secret/tradebot-test/user-service \
   db-password='CHANGE_ME' \
   db-migrator-username='postgres' \
   db-migrator-password='CHANGE_ME'
+
+# bot-engine: standard DB creds (JDBC, own DB instance on cloudy-vm).
+vault kv put secret/tradebot-test/bot-engine \
+  db-password='CHANGE_ME' \
+  db-migrator-username='postgres' \
+  db-migrator-password='CHANGE_ME'
 ```
 
 (As more backends are onboarded, add `secret/tradebot-test/<service>` with `db-password`

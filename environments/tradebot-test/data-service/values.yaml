@@ -87,7 +87,10 @@ migration:
   enabled: true
   repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-data-service
   tag: 0f277bab
-  dbUrl: jdbc:postgresql://data-service-db:5532/tradebot
+  # Real DB host, NOT the data-service-db alias: the migration Job is a PreSync hook and runs
+  # BEFORE the main sync creates the ExternalName Service, so the alias can't resolve yet.
+  # (The long-running app still uses the alias via DB_DATA_SERVICE_URL.)
+  dbUrl: jdbc:postgresql://cloudy-vm.margusm.dev:5532/tradebot
   eso:
     data:
       - secretKey: LIQUIBASE_DB_USERNAME

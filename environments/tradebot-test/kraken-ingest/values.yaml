@@ -1,0 +1,22 @@
+image:
+  repository: registry.margusm.dev/devprojects/tradebot-2/kraken-ingest
+  tag: 31bc5b14
+
+containerPort: 8083
+service:
+  port: 8083
+probes:
+  liveness:
+    path: /actuator/health/liveness
+  readiness:
+    path: /actuator/health/readiness
+
+env:
+  KAFKA_USERNAME: kraken-ingest
+  DATA_SERVICE_URL: http://data-service:8081
+
+secrets:
+  eso:
+    data:
+      - secretKey: KAFKA_PASSWORD
+        remoteRef: { key: tradebot-test/kafka/kraken-ingest, property: password }

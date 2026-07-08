@@ -70,6 +70,15 @@ yahoo-ingest, order-management-service), `.yml` (gateway, bot-engine, user-servi
 `kraken-exec` not touched. NB: k8s now duplicates prod — a prod env-wiring change must be
 mirrored into k8s (they diverge only in Kafka auth).
 
+**Logback dependency (bit us once):** `common-lib/src/main/resources/logback-spring.xml`
+references the `OTEL` appender only inside `<springProfile>` blocks. It originally had
+`local,default` and `microk8s,prod,docker` — no `k8s`. So running `k8s` ALONE left the OTEL
+appender defined-but-unreferenced → zero OTLP log export → nothing in Loki (metrics/traces
+still worked, via Micrometer not logback). Fixed by adding a dedicated `<springProfile
+name="k8s">` block (CONSOLE + OTEL, no FILE-ROLLING — files in a container are an anti-pattern).
+Lesson: profile-gated logback is a hidden dependency on the profile NAME; any new deploy
+profile needs its own block. Requires an app-image rebuild (not the migrator).
+
 ## Service inventory
 
 | Service | Port | context-path | DB | Redis | Kafka user | Migrator |

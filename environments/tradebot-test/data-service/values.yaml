@@ -5,9 +5,8 @@
 # Values here are merged over charts/common-service/values.yaml.
 
 image:
-  # GitLab OCI registry: registry.margusm.dev/<group>/<project>/<image> = $CI_REGISTRY_IMAGE.
   repository: registry.margusm.dev/devprojects/tradebot-2/data-service
-  tag: 0f277bab
+  tag: 31bc5b14
 
 replicaCount: 1
 

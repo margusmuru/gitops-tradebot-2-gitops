@@ -21,13 +21,15 @@ spec:
         repoURL: https://gitlab.margusm.dev/gitops/tradebot-2-gitops.git
         revision: main
         directories:
+          # Every environments/<env>/<service>/ is discovered and synced. Platform
+          # (base/kafka, base/redis, ESO/Vault, otel-collector) must be healthy before a
+          # backend syncs — they already are. data-service is now enabled (image tags real,
+          # DB reachable, Vault keys seeded). `whoami` remains the zero-dependency smoke test.
           - path: environments/*/*
-          # Bring-up sequencing: platform (base/kafka, base/redis) + ESO/Vault must be
-          # healthy BEFORE any real backend syncs. data-service is excluded until its
-          # dependencies exist (and its image tags are real). Remove this exclude to
-          # enable it. `whoami` stays discoverable as the zero-dependency smoke test.
-          - path: environments/tradebot-test/data-service
-            exclude: true
+          # To hold a service OUT of sync (e.g. deps not ready, or a placeholder image),
+          # add an explicit entry with exclude: true — it overrides the glob above:
+          # - path: environments/tradebot-test/data-service
+          #   exclude: true
   template:
     metadata:
       # path.segments = [environments, <env>, <service>]

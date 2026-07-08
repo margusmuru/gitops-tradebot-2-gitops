@@ -7,9 +7,15 @@
 image:
   # GitLab OCI registry: registry.margusm.dev/<group>/<project>/<image> = $CI_REGISTRY_IMAGE.
   repository: registry.margusm.dev/devprojects/tradebot-2/data-service
-  tag: REPLACE_ME            # bumped by CI on every data-service build (commit short SHA)
+  tag: 0f277bab
 
 replicaCount: 1
+
+# data-service runs singleton scheduled work (gap-watchdog crons, backfill-job dispatch), so
+# two instances must never run at once. Recreate terminates the old pod before starting the
+# new one on every version change (accepts a brief downtime gap instead of an overlap).
+strategy:
+  type: Recreate
 
 # Pull backend images from the private GitLab registry. Credential (a group-scoped
 # read_registry deploy token) lives in Vault at secret/tradebot-test/registry and is
@@ -53,9 +59,10 @@ externalDb:
   stableDns:
     enabled: true
     serviceName: data-service-db
-    externalName: postgres.db.internal      # PLACEHOLDER - real Timescale/Postgres host
+    externalName: cloudy-vm.margusm.dev     # real Timescale/Postgres host (ExternalName CNAME)
   env:
-    DB_DATA_SERVICE_URL: jdbc:postgresql://data-service-db:5432/tradebot
+    # ExternalName does NOT remap ports, so the URL must carry the real DB port (5532).
+    DB_DATA_SERVICE_URL: jdbc:postgresql://data-service-db:5532/tradebot
 
 # App runtime secrets, projected from Vault. DB user is the app user (tradebot); only the
 # password is secret. Redis + Kafka passwords come from the shared/per-user Vault paths.
@@ -79,8 +86,8 @@ secrets:
 migration:
   enabled: true
   repository: registry.margusm.dev/devprojects/tradebot-2/db-migrator-data-service
-  tag: REPLACE_ME            # bumped by CI only on database/data-service/** changes
-  dbUrl: jdbc:postgresql://data-service-db:5432/tradebot
+  tag: 0f277bab
+  dbUrl: jdbc:postgresql://data-service-db:5532/tradebot
   eso:
     data:
       - secretKey: LIQUIBASE_DB_USERNAME

@@ -82,27 +82,42 @@ vault kv put secret/tradebot-test/data-service \
 ```
 
 (As more backends are onboarded, add `secret/tradebot-test/<service>` with `db-password`
-+ `db-migrator-username`/`db-migrator-password` the same way.)
++ `db-migrator-username`/`db-migrator-password` the same way. Some services also need an
+extra key: **gateway** needs `jwt-secret` (mapped to `JWT_SECRET`). Add per-service extras
+to that service's `secret/tradebot-test/<service>` path when you wire its `values.yaml`.)
 
 ```bash
 # Private image-registry pull credential. Both projects live in the GitLab group
-# `devprojects`, so use a GROUP deploy token (Group -> Settings -> Repository -> Deploy
-# tokens) with scope read_registry - it pulls from every project in the group, covering
-# both the backend (devprojects/tradebot-2) and the UI (devprojects/tradebot-2-ui).
-# username = deploy-token username, password = the token. Both backend and UI charts point
-# registry.vaultKey at this same path. ESO builds the dockerconfigjson (host registry.margusm.dev).
+# `devprojects`, so use ONE group-scoped credential with `read_registry` - it pulls from
+# every project in the group, covering the backend (devprojects/tradebot-2) AND the UI
+# (devprojects/tradebot-2-ui). Two equivalent options (need Owner on the group):
+#   - Group DEPLOY token  (Group -> Settings -> Repository -> Deploy tokens):
+#       username = the deploy-token username (or gitlab+deploy-token-N), password = the token
+#   - Group ACCESS token  (Group -> Settings -> Access tokens, role Reporter):
+#       username = the token's NAME, password = the token value
+# Both backend and UI charts point registry.vaultKey at this same path; ESO builds the
+# dockerconfigjson (host registry.margusm.dev).
 vault kv put secret/tradebot-test/registry \
   username='CHANGE_ME' \
   password='CHANGE_ME'
 ```
 
+> **Not seeded here:** the ArgoCD repo credential lives at a **different** Vault path
+> (`secret/argocd/tradebot-2-gitops`) behind a separate store/policy (`argocd-vault` /
+> `argocd-eso`), because it bootstraps ArgoCD itself. See `infrastructure/README.md`.
+
 ## Verify end to end
 
 ```bash
 kubectl get clustersecretstore tradebot-vault              # STATUS=Valid  (Invalid => role/SA/name mismatch)
-kubectl -n tradebot-test-base get externalsecret,secret    # SecretSynced=True; redis-auth + kafka-user-passwords Secrets exist
+# base components (tradebot-test-base): redis-auth + kafka-user-passwords
+kubectl -n tradebot-test-base get externalsecret,secret    # SecretSynced=True
+# app services (tradebot-test-app), once un-excluded: per-service secrets + dockerconfigjson
+kubectl -n tradebot-test-app  get externalsecret           # data-service-{secrets,migration-secrets,registry,registry-presync} SecretSynced=True
 ```
 
 `Valid` means ESO authenticated to Vault as `tradebot-eso` via the `tradebot-test-eso`
-role. Once the Secrets sync, the Kafka `KafkaUser`s get their passwords and Redis can
-start with its `--requirepass`.
+role. Once the Secrets sync, the Kafka `KafkaUser`s get their passwords, Redis can start
+with its `--requirepass`, and each app service gets its DB/Redis/Kafka creds, migrator
+credential, and image-pull secret. A `SecretSyncedError` on an ExternalSecret almost always
+means a missing Vault key/property — cross-check against the seed commands above.

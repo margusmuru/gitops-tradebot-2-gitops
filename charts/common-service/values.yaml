@@ -26,6 +26,13 @@ registry:
 
 replicaCount: 1
 
+# Deployment update strategy. Left empty = Kubernetes default (RollingUpdate, which with
+# replicaCount:1 surges to a 2nd pod before terminating the old one). Services that must
+# NEVER run two instances at once (singleton scheduled work, non-partitioned consumers) set
+#   strategy: { type: Recreate }
+# to tear the old pod down fully before starting the new one (brief downtime per deploy).
+strategy: {}
+
 serviceAccount:
   create: false
   name: ""

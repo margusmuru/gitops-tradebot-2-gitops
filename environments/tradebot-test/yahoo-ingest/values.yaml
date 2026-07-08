@@ -1,0 +1,22 @@
+image:
+  repository: registry.margusm.dev/devprojects/tradebot-2/yahoo-ingest
+  tag: 31bc5b14
+
+containerPort: 8085
+service:
+  port: 8085
+probes:
+  liveness:
+    path: /actuator/health/liveness
+  readiness:
+    path: /actuator/health/readiness
+
+env:
+  KAFKA_USERNAME: yahoo-ingest
+  DATA_SERVICE_URL: http://data-service:8081
+
+secrets:
+  eso:
+    data:
+      - secretKey: KAFKA_PASSWORD
+        remoteRef: { key: tradebot-test/kafka/yahoo-ingest, property: password }

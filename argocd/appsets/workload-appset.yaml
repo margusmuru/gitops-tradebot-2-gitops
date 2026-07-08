@@ -28,7 +28,7 @@ spec:
           - path: environments/*/*
           # To hold a service OUT until ready (deps/Vault/images not real), add an explicit
           # entry with exclude: true — it overrides the glob above. Remove it to enable:
-          # - path: environments/tradebot-test/kraken-ingest
+          # - path: environments/tradebot-test/yahoo-ingest
           #   exclude: true
   template:
     metadata:
